@@ -168,7 +168,7 @@ class ManualMemoryIntegrationTest {
         assertThat(ctx.instructions()).contains("지난 상담과의 간격: " + today + " (같은 날, 0일 전)");
         String cue = ctx.messages().get(ctx.messages().size() - 1).content();
         assertThat(cue).contains("지난 상담과의 간격").contains("같은 날(0일)").contains("습관적으로 쓰지 않습니다");
-        assertThat(prompts.load(PromptLoader.OPENING_CUE).version()).isEqualTo("v2");
+        assertThat(prompts.load(PromptLoader.OPENING_CUE).version()).isEqualTo("v3");
         completion.complete(sameDay.id());
     }
 

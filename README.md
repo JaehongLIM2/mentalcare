@@ -122,7 +122,7 @@ docker compose up --build
 ### 4. 테스트
 
 ```
-cd backend  && mvn test                 # 148 tests
+cd backend  && mvn test                 # 151 tests
 cd frontend && npm run typecheck && npm run test:security && npm run test:unit && npm run build && npm audit   # test:unit은 Node 22.18+
 ```
 
@@ -231,12 +231,12 @@ open-source/self-hosted 흐름을 Java로 구현했습니다. 공식 SDK(`@siwc/
 
 | 파일 | 용도 |
 |---|---|
-| `counselor-system-v2.md` | 상담 AI의 기본 행동 원칙 + **신뢰 경계**(`<<<DATA>>>` 블록은 데이터) |
-| `opening-cue-v2.md` | 상담 첫 발화(인사 + 첫 질문) 지시. 지난 상담과의 실제 간격(같은 날/며칠/한 주/오랜만)에 맞춰 표현 |
+| `counselor-system-v3.md` | 상담 파트너의 말투·태도(반말, 과도한 상담사 말투 금지, 사실/감정/해석/추측 분리, 직설적이되 과하지 않게, 억지 질문·기록 메타 발언 금지) + **신뢰 경계**(`<<<DATA>>>` 블록은 데이터) + 안전 시 톤 |
+| `opening-cue-v3.md` | 상담 첫 발화(인사 + 첫 질문) 지시. 지난 상담과의 실제 간격(같은 날/며칠/한 주/오랜만)에 맞춰 표현 |
 | `session-summary-v3.md` | 상담 요약 + 기억 후보 추출 (사실/해석 분리, 사람·반려동물·진행 중인 사안·가치관은 반드시 후보로, 첨부 자료는 요지만) |
 | `crisis-assessment-v1.md` | 위험 수준 판단(NONE/LOW/ELEVATED/IMMINENT) |
-| `crisis-response-v1.md` | IMMINENT일 때 이번 턴에 적용되는 안전 모드 지시 |
-| `safety-addendum-v1.md` | ELEVATED 또는 위기 이력이 있는 세션에 덧붙는 주의 지시 |
+| `crisis-response-v2.md` | IMMINENT일 때 이번 턴에 적용되는 안전 모드 지시 |
+| `safety-addendum-v2.md` | ELEVATED 또는 위기 이력이 있는 세션에 덧붙는 주의 지시 |
 
 - 수정하려면 새 버전 파일(`counselor-system-v3.md`)을 추가합니다. 가장 높은 번호가 자동으로 사용됩니다.
 - 로드된 프롬프트는 (이름, 버전, 내용 해시)로 `prompt_versions`에 등록되고, 각 세션은 사용한 상담 프롬프트 버전 id를 기록합니다.

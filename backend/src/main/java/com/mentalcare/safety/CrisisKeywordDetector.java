@@ -18,12 +18,12 @@ public class CrisisKeywordDetector {
             Pattern.compile("자살"),
             Pattern.compile("자해"),
             Pattern.compile("죽고\\s*싶"),
-            Pattern.compile("죽어\\s*버리"),
+            Pattern.compile("죽어\\s*버[리릴린렸려]"),   // 버리다/버릴/버린/버렸/버려
             Pattern.compile("죽으면\\s*(편|좋)"),
             Pattern.compile("사라지고\\s*싶"),
             Pattern.compile("없어지고\\s*싶"),
-            Pattern.compile("목을?\\s*매"),
-            Pattern.compile("뛰어\\s*내리"),
+            Pattern.compile("목을?\\s*[매맬맸]"),         // 매다/맬/맸
+            Pattern.compile("뛰어\\s*내[리릴린렸려]"),   // 내리다/내릴/내린/내렸/내려
             Pattern.compile("손목"),
             Pattern.compile("약을?\\s*(다|한꺼번에|몽땅|전부)\\s*(먹|삼)"),
             Pattern.compile("유서"),
