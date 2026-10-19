@@ -45,10 +45,16 @@ public class CounselingService {
     private final LlmClient llm;
     private final UsageRecorder usage;
     private final SessionLocks locks;
+    private final com.mentalcare.repository.AttachmentRepository attachmentRepository;
+    private final org.springframework.transaction.support.TransactionTemplate tx;
 
     public CounselingService(SessionService sessionService, SessionRepository sessions, MessageRepository messages,
                              DraftRepository drafts, SafetyService safety, CounselingContextBuilder contextBuilder,
-                             LlmClient llm, UsageRecorder usage, SessionLocks locks) {
+                             LlmClient llm, UsageRecorder usage, SessionLocks locks,
+                             com.mentalcare.repository.AttachmentRepository attachmentRepository,
+                             org.springframework.transaction.support.TransactionTemplate tx) {
+        this.attachmentRepository = attachmentRepository;
+        this.tx = tx;
         this.sessionService = sessionService;
         this.sessions = sessions;
         this.messages = messages;
@@ -95,10 +101,26 @@ public class CounselingService {
      *                 (still in flight) can no longer bring the sent text back as a draft
      */
     public void reply(long sessionId, String userText, Long draftRev, TurnListener listener) {
-        if (userText == null || userText.isBlank()) {
+        reply(sessionId, userText, draftRev, List.of(), listener);
+    }
+
+    /**
+     * @param files text files attached to this message (validated here). Their full text is given to the model
+     *              only on this turn (and a retry of it); later turns see the file names only.
+     */
+    public void reply(long sessionId, String userText, Long draftRev, List<Attachments.Input> files, TurnListener listener) {
+        List<Attachments.Input> attached;
+        try {
+            attached = Attachments.validate(files);
+        } catch (IllegalArgumentException e) {
+            listener.onError(e.getMessage(), "BAD_REQUEST");
+            return;
+        }
+        if ((userText == null || userText.isBlank()) && attached.isEmpty()) {
             listener.onError("메시지가 비어 있습니다.", "BAD_REQUEST");
             return;
         }
+        String text = userText == null ? "" : userText.trim();
         if (!locks.tryLock(sessionId)) {
             listener.onError(BUSY_MESSAGE, "BUSY");
             return;
@@ -111,8 +133,13 @@ public class CounselingService {
             }
 
             // 1. Persist first so nothing is lost if the AI call fails. The sent text is no longer a draft.
-            Message userMessage = messages.insert(sessionId, MessageRole.USER, userText.trim(), MessageStatus.COMPLETE, null);
-            drafts.clearUpTo(sessionId, draftRev == null ? DraftRevisions.next() : draftRev);
+            Message userMessage = tx.execute(status -> {
+                Message saved = messages.insert(sessionId, MessageRole.USER, text, MessageStatus.COMPLETE, null);
+                for (Attachments.Input f : attached) attachmentRepository.insert(saved.id(), sessionId, f.name(), f.content());
+                drafts.clearUpTo(sessionId, draftRev == null ? DraftRevisions.next() : draftRev);
+                return saved;
+            });
+            if (!attached.isEmpty()) log.info("message saved session={} attachments={}", sessionId, attached.size());
             sessions.touch(sessionId);
             listener.onUserSaved(userMessage);
 

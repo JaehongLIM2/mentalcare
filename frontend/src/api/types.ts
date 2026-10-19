@@ -41,6 +41,15 @@ export interface MessageDto {
   createdAt: string
   /** true on a user message whose safety check could not be done */
   safetyUnavailable?: boolean | null
+  /** text files attached to this (user) message */
+  attachments?: AttachmentDto[] | null
+}
+
+export interface AttachmentDto {
+  id: number
+  name: string
+  charCount: number
+  content: string
 }
 
 export interface DraftDto {

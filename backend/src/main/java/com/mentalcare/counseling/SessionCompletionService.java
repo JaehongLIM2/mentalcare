@@ -67,6 +67,7 @@ public class SessionCompletionService {
     private final com.mentalcare.ai.ModelCatalogService models;
     private final SessionLocks locks;
     private final DraftRepository drafts;
+    private final com.mentalcare.repository.AttachmentRepository attachments;
 
     public SessionCompletionService(SessionService sessionService, SessionRepository sessions,
                                     MessageRepository messages, CheckInRepository checkIns,
@@ -74,8 +75,9 @@ public class SessionCompletionService {
                                     MarkdownExporter markdown, PromptLoader prompts, LlmClient llm,
                                     UsageRecorder usage, TransactionTemplate tx,
                                     com.mentalcare.ai.ModelCatalogService models, SessionLocks locks,
-                                    DraftRepository drafts) {
+                                    DraftRepository drafts, com.mentalcare.repository.AttachmentRepository attachments) {
         this.drafts = drafts;
+        this.attachments = attachments;
         this.models = models;
         this.locks = locks;
         this.sessionService = sessionService;
@@ -188,10 +190,14 @@ public class SessionCompletionService {
         // Budget: keep the most recent messages that fit; note the omission so the model does not guess.
         StringBuilder conv = new StringBuilder();
         int omitted = 0;
+        java.util.Map<Long, List<com.mentalcare.domain.Attachment>> attachedFiles =
+                attachments.bySession(session.id());
         for (int i = transcript.size() - 1; i >= 0; i--) {
             Message m = transcript.get(i);
-            if (m.status() == MessageStatus.FAILED || m.content().isBlank()) continue;
-            String line = (m.role() == MessageRole.USER ? "[사용자] " : "[상담자] ") + m.content().trim() + "\n\n";
+            List<com.mentalcare.domain.Attachment> att = attachedFiles.getOrDefault(m.id(), List.of());
+            if (m.status() == MessageStatus.FAILED || (m.content().isBlank() && att.isEmpty())) continue;
+            String body = m.content().isBlank() ? "(메시지 없이 파일만 첨부함)" : m.content().trim();
+            String line = (m.role() == MessageRole.USER ? "[사용자] " : "[상담자] ") + body + attachmentExcerpts(att) + "\n\n";
             if (conv.length() + line.length() > MAX_TRANSCRIPT_CHARS) { omitted++; continue; }
             conv.insert(0, line);
         }
@@ -199,6 +205,25 @@ public class SessionCompletionService {
             sb.append("(길이 제한으로 앞부분 메시지 ").append(omitted).append("개는 생략됨)\n\n");
         }
         sb.append(conv);
+        return sb.toString();
+    }
+
+    /** Attached files reach the summary model as a short, delimited excerpt (gist only, never the full text). */
+    static final int ATTACHMENT_EXCERPT_CHARS = 2_000;
+
+    static String attachmentExcerpts(List<com.mentalcare.domain.Attachment> att) {
+        StringBuilder sb = new StringBuilder();
+        for (com.mentalcare.domain.Attachment a : att) {
+            String text = a.content().strip();
+            boolean cut = text.length() > ATTACHMENT_EXCERPT_CHARS;
+            if (cut) text = text.substring(0, ATTACHMENT_EXCERPT_CHARS);
+            String safeName = a.fileName().replace("<<<DATA", "< < <DATA").replace(">>>", "> > >");
+            sb.append("\n[사용자가 첨부한 자료: ").append(safeName).append(", ").append(a.charCount()).append("자")
+                    .append(cut ? ", 앞부분만" : "").append("]\n")
+                    .append("<<<DATA 첨부 자료\n")
+                    .append(text.replace("<<<DATA", "< < <DATA").replace(">>>", "> > >"))
+                    .append("\n>>>");
+        }
         return sb.toString();
     }
 

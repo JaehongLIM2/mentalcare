@@ -36,7 +36,8 @@ public class SessionService {
 
     public record SessionDetail(Session session, WeeklyCheckIn checkIn, List<Message> messages,
                                 SessionSummary summary, List<String> tags, PromptVersion promptVersion,
-                                String importedMarkdown, Draft draft) {}
+                                String importedMarkdown, Draft draft,
+                                Map<Long, List<com.mentalcare.domain.Attachment>> attachments) {}
 
     public record SessionListItem(Session session, SessionSummary summary, List<String> tags, WeeklyCheckIn checkIn) {}
 
@@ -51,11 +52,14 @@ public class SessionService {
     private final SessionLocks locks;
     private final TransactionTemplate tx;
     private final DraftRepository drafts;
+    private final com.mentalcare.repository.AttachmentRepository attachmentRepository;
 
     public SessionService(SessionRepository sessions, MessageRepository messages, CheckInRepository checkIns,
                           SummaryRepository summaries, TagRepository tags, PromptVersionRepository promptVersions,
                           PromptLoader prompts, com.mentalcare.repository.ImportedArchiveRepository archives,
-                          SessionLocks locks, TransactionTemplate tx, DraftRepository drafts) {
+                          SessionLocks locks, TransactionTemplate tx, DraftRepository drafts,
+                          com.mentalcare.repository.AttachmentRepository attachmentRepository) {
+        this.attachmentRepository = attachmentRepository;
         this.drafts = drafts;
         this.archives = archives;
         this.locks = locks;
@@ -113,7 +117,8 @@ public class SessionService {
                 tags.findBySession(id),
                 pv,
                 session.isImported() ? archives.rawMarkdown(id).orElse(null) : null,
-                session.isActive() ? drafts.find(id).orElse(null) : null);
+                session.isActive() ? drafts.find(id).orElse(null) : null,
+                attachmentRepository.bySession(id));
     }
 
     /** Stores the composer text of an active session; blank text removes the draft. */

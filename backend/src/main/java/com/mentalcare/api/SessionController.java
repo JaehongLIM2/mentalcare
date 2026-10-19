@@ -90,7 +90,7 @@ public class SessionController {
         return new SessionDetailDto(
                 SessionDto.of(d.session(), d.promptVersion()),
                 CheckInDto.of(d.checkIn()),
-                d.messages().stream().map(MessageDto::of).toList(),
+                d.messages().stream().map(m -> MessageDto.of(m, d.attachments().get(m.id()))).toList(),
                 SummaryDto.of(d.summary()),
                 d.tags(),
                 d.importedMarkdown(),

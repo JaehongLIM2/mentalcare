@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -53,8 +54,14 @@ public class MessageStreamController {
     public SseEmitter send(@PathVariable long id, @Valid @RequestBody SendMessageRequest request) {
         SseEmitter emitter = new SseEmitter(TIMEOUT_MS);
         EmitterListener listener = new EmitterListener(emitter);
-        executor.submit(() -> run(() -> counseling.reply(id, request.content(), request.draftRev(), listener), listener));
+        executor.submit(() -> run(() -> counseling.reply(id, request.content(), request.draftRev(), attachments(request), listener), listener));
         return emitter;
+    }
+
+    private static List<com.mentalcare.counseling.Attachments.Input> attachments(SendMessageRequest request) {
+        if (request.attachments() == null) return List.of();
+        return request.attachments().stream()
+                .map(a -> new com.mentalcare.counseling.Attachments.Input(a.name(), a.content())).toList();
     }
 
     /** Asks for the reply again after an interruption; the user's message is not saved twice. */

@@ -116,7 +116,8 @@ public class SessionRepository {
                        OR EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id AND m.status <> 'FAILED' AND m.content LIKE :q ESCAPE '!')
                        OR EXISTS (SELECT 1 FROM session_summaries ss WHERE ss.session_id = s.id AND (ss.summary_json LIKE :q ESCAPE '!' OR ss.summary_json LIKE :qJson ESCAPE '!'))
                        OR EXISTS (SELECT 1 FROM weekly_checkins c WHERE c.session_id = s.id AND c.note LIKE :q ESCAPE '!')
-                       OR EXISTS (SELECT 1 FROM imported_archives a WHERE a.session_id = s.id AND a.raw_markdown LIKE :q ESCAPE '!'))
+                       OR EXISTS (SELECT 1 FROM imported_archives a WHERE a.session_id = s.id AND a.raw_markdown LIKE :q ESCAPE '!')
+                       OR EXISTS (SELECT 1 FROM message_attachments f WHERE f.session_id = s.id AND (f.content LIKE :q ESCAPE '!' OR f.file_name LIKE :q ESCAPE '!')))
                     """);
         }
         if (f.from() != null) {

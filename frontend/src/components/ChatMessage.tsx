@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
-import type { MessageDto } from '../api/types'
+import { useState, type ReactNode } from 'react'
+import type { AttachmentDto, MessageDto } from '../api/types'
 import { fmtTime } from '../util/format'
 
 interface Props {
@@ -9,6 +9,20 @@ interface Props {
   status?: MessageDto['status']
   streaming?: boolean
   safetyUnavailable?: boolean | null
+  attachments?: AttachmentDto[] | null
+}
+
+/** An attached file: name and size; the text opens in place (plain text, never HTML). */
+function AttachmentChip({ file }: { file: AttachmentDto }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="attachment">
+      <button className="attachment-chip" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        📎 {file.name} <span className="muted">({file.charCount.toLocaleString()}자)</span> {open ? '접기' : '보기'}
+      </button>
+      {open && <pre className="attachment-text">{file.content}</pre>}
+    </div>
+  )
 }
 
 /**
@@ -29,11 +43,14 @@ export function withBold(text: string): ReactNode[] {
   return out
 }
 
-export default function ChatMessage({ role, content, createdAt, status, streaming, safetyUnavailable }: Props) {
+export default function ChatMessage({ role, content, createdAt, status, streaming, safetyUnavailable, attachments }: Props) {
   const cls = role === 'USER' ? 'msg user' : 'msg assistant'
   return (
     <div className={cls}>
-      <div className={'bubble' + (streaming ? ' cursor' : '')}>{role === 'ASSISTANT' ? withBold(content) : content}</div>
+      {(content || !attachments?.length) && (
+        <div className={'bubble' + (streaming ? ' cursor' : '')}>{role === 'ASSISTANT' ? withBold(content) : content}</div>
+      )}
+      {attachments?.map((a) => <AttachmentChip key={a.id} file={a} />)}
       <div className="meta">
         {role === 'USER' ? '나' : '상담자'}
         {createdAt ? ` · ${fmtTime(createdAt)}` : ''}

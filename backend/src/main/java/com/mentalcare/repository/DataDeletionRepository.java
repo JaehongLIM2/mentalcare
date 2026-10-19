@@ -35,6 +35,7 @@ public class DataDeletionRepository {
     public void deleteSession(long sessionId) {
         jdbc.sql("DELETE FROM session_tags WHERE session_id = :id").param("id", sessionId).update();
         jdbc.sql("DELETE FROM drafts WHERE session_id = :id").param("id", sessionId).update();
+        jdbc.sql("DELETE FROM message_attachments WHERE session_id = :id").param("id", sessionId).update();
         jdbc.sql("DELETE FROM imported_archives WHERE session_id = :id").param("id", sessionId).update();
         jdbc.sql("DELETE FROM safety_events WHERE session_id = :id").param("id", sessionId).update();
         jdbc.sql("DELETE FROM session_summaries WHERE session_id = :id").param("id", sessionId).update();
@@ -67,7 +68,7 @@ public class DataDeletionRepository {
 
     /** Deletes every counseling record. Keeps app_settings, prompt_versions. */
     public void deleteAllCounselingData() {
-        for (String table : List.of("session_tags", "drafts", "memory_suggestion_dismissals", "imported_archives", "safety_events", "session_summaries", "weekly_checkins", "messages",
+        for (String table : List.of("session_tags", "drafts", "memory_suggestion_dismissals", "imported_archives", "safety_events", "session_summaries", "weekly_checkins", "message_attachments", "messages",
                 "memory_observations", "memories", "tags", "api_usage", "sessions")) {
             jdbc.sql("DELETE FROM " + table).update();
         }

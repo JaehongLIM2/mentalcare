@@ -128,7 +128,8 @@ export default function SessionDetailPage() {
           </div>
           <div className="chat">
             {messages.filter((m) => m.status !== 'FAILED').map((m) => (
-              <ChatMessage key={m.id} role={m.role} content={m.content} createdAt={m.createdAt} status={m.status} />
+              <ChatMessage key={m.id} role={m.role} content={m.content} createdAt={m.createdAt} status={m.status}
+                safetyUnavailable={m.safetyUnavailable} attachments={m.attachments} />
             ))}
             {messages.length === 0 && <div className="muted">대화가 없습니다.</div>}
           </div>

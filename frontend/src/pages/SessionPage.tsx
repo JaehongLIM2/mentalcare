@@ -8,6 +8,7 @@ import SafetyBanner from '../components/SafetyBanner'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import { fmtTime } from '../util/format'
 import { DraftSaver } from '../util/draftSaver'
+import { ACCEPT, addFiles, readFile, type PendingFile } from '../util/attachments'
 
 const END_PHRASES = ['오늘은 여기까지', '상담 끝', '그만 이야기', '여기까지 할게', '이만 끝']
 const DRAFT_DEBOUNCE_MS = 800
@@ -49,6 +50,9 @@ export default function SessionPage() {
   const [errorKind, setErrorKind] = useState<string | null>(null)
   const [risk, setRisk] = useState<RiskLevel | null>(null)
   const [safetyUnchecked, setSafetyUnchecked] = useState(false)
+  const [files, setFiles] = useState<PendingFile[]>([])
+  const [fileError, setFileError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [endHint, setEndHint] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -173,7 +177,7 @@ export default function SessionPage() {
   }, [sessionId])
 
   const runTurn = useCallback(
-    async (url: string, body: unknown | null, pending?: { tempId: number; text: string }) => {
+    async (url: string, body: unknown | null, pending?: { tempId: number; text: string; files?: PendingFile[] }) => {
       setBusy(true)
       setError(null)
       setErrorKind(null)
@@ -216,7 +220,8 @@ export default function SessionPage() {
             // the server never stored it: take it off the screen and give the text back
             setMessages((prev) => prev.filter((m) => m.id !== pending.tempId))
             setInput((current) => (current.trim() ? current : pending.text))
-            setError(`${msg} 입력한 내용은 저장되지 않아 입력란에 되돌려 두었습니다.`)
+            if (pending.files?.length) setFiles((current) => (current.length ? current : pending.files ?? []))
+            setError(`${msg} 입력한 내용${pending.files?.length ? '과 첨부 파일' : ''}은 저장되지 않아 입력란에 되돌려 두었습니다.`)
           } else {
             setError(msg)
           }
@@ -315,10 +320,28 @@ export default function SessionPage() {
     }
   }, [detail])
 
+  const pickFiles = async (list: FileList | null) => {
+    setFileError(null)
+    if (!list || list.length === 0) return
+    try {
+      const read = await Promise.all(Array.from(list).map(readFile))
+      const result = addFiles(files, read)
+      if (result.error) setFileError(result.error)
+      else setFiles(result.files)
+    } catch {
+      setFileError('파일을 읽지 못했습니다.')
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
   const send = async () => {
     const text = input.trim()
-    if (!text || busy) return
+    const sending = files
+    if ((!text && sending.length === 0) || busy) return
     setInput('')
+    setFiles([])
+    setFileError(null)
     setDraftNotice(null)
     // the server replaces the draft with a tombstone at this revision, newer than any autosave so far
     const draftRev = saverRef.current?.nextRev()
@@ -330,10 +353,17 @@ export default function SessionPage() {
       content: text,
       status: 'COMPLETE',
       createdAt: new Date().toISOString(),
+      attachments: sending.length
+        ? sending.map((f, i) => ({ id: tempId - i - 1, name: f.name, charCount: f.chars, content: f.content }))
+        : undefined,
     }
     setMessages((prev) => [...prev, optimistic])
     if (END_PHRASES.some((p) => text.includes(p))) setEndHint(true)
-    await runTurn(`/api/sessions/${sessionId}/messages`, { content: text, draftRev }, { tempId, text })
+    await runTurn(
+      `/api/sessions/${sessionId}/messages`,
+      { content: text, draftRev, attachments: sending.map((f) => ({ name: f.name, content: f.content })) },
+      { tempId, text, files: sending },
+    )
   }
 
   const retry = async () => {
@@ -420,7 +450,8 @@ export default function SessionPage() {
       <div className="chat-scroll" ref={chatRef} onScroll={onChatScroll}>
         <div className="chat">
           {visible.map((m) => (
-            <ChatMessage key={m.id} role={m.role} content={m.content} createdAt={m.createdAt} status={m.status} safetyUnavailable={m.safetyUnavailable} />
+            <ChatMessage key={m.id} role={m.role} content={m.content} createdAt={m.createdAt} status={m.status}
+              safetyUnavailable={m.safetyUnavailable} attachments={m.attachments} />
           ))}
           {streamingText !== null && <ChatMessage role="ASSISTANT" content={streamingText || '…'} streaming />}
         </div>
@@ -478,7 +509,31 @@ export default function SessionPage() {
       </div>
 
       <div className="composer">
+        {(files.length > 0 || fileError) && (
+          <div className="pending-files">
+            {files.map((f, i) => (
+              <span className="attachment-chip" key={`${f.name}-${i}`}>
+                📎 {f.name} <span className="muted">({f.chars.toLocaleString()}자)</span>
+                <button className="chip-remove" aria-label={`${f.name} 첨부 취소`}
+                  onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}>×</button>
+              </span>
+            ))}
+            {files.length > 0 && (
+              <div className="muted small">
+                첨부한 파일 내용도 대화와 함께 OpenAI로 전송됩니다. 다른 사람의 메시지가 들어 있다면 그 내용도 함께 전송됩니다.
+                상담자는 이번 답변에서만 원문을 보고, 이후에는 파일 이름만 참고합니다.
+              </div>
+            )}
+            {fileError && <div className="small" style={{ color: 'var(--danger)' }}>{fileError}</div>}
+          </div>
+        )}
         <div className="composer-row">
+          <input ref={fileInputRef} type="file" accept={ACCEPT} multiple hidden
+            onChange={(e) => void pickFiles(e.target.files)} />
+          <button className="btn attach" onClick={() => fileInputRef.current?.click()}
+            disabled={busy || completing} title="텍스트(.txt)·Markdown(.md) 파일 첨부" aria-label="파일 첨부">
+            📎
+          </button>
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -487,7 +542,7 @@ export default function SessionPage() {
             disabled={busy || completing}
             rows={3}
           />
-          <button className="btn primary send" onClick={send} disabled={busy || completing || !input.trim()}>
+          <button className="btn primary send" onClick={send} disabled={busy || completing || (!input.trim() && files.length === 0)}>
             {busy ? (phase === 'sending' ? '전송 중…' : '생성 중…') : '보내기'}
           </button>
         </div>

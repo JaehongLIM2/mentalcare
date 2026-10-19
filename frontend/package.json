@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test:security": "node scripts/check-security.mjs",
-    "test:unit": "node scripts/require-node-ts.mjs && node scripts/test-draft-saver.ts"
+    "test:unit": "node scripts/require-node-ts.mjs && node scripts/test-draft-saver.ts && node scripts/test-attachments.ts"
   },
   "dependencies": {
     "react": "^18.3.1",

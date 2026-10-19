@@ -139,3 +139,16 @@ CREATE TABLE IF NOT EXISTS memory_suggestion_dismissals (
     key         TEXT PRIMARY KEY,
     created_at  TEXT NOT NULL
 );
+
+-- Text files (.txt / .md) attached to a user message. The full text reaches the model only on the turn
+-- that answers that message; later turns see just the file name.
+CREATE TABLE IF NOT EXISTS message_attachments (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id  INTEGER NOT NULL REFERENCES messages(id),
+    session_id  INTEGER NOT NULL REFERENCES sessions(id),
+    file_name   TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    char_count  INTEGER NOT NULL,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_message_attachments_session ON message_attachments(session_id, message_id);

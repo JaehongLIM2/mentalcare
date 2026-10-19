@@ -36,7 +36,11 @@ public final class ApiDtos {
     public record CreateSessionRequest(@jakarta.validation.Valid CheckInRequest checkIn) {}
 
     /** {@code draftRev}: the composer's draft revision when sending (optional). */
-    public record SendMessageRequest(@NotBlank @Size(max = 20000) String content, Long draftRev) {}
+    public record SendMessageRequest(@Size(max = 20000) String content, Long draftRev,
+                                     @jakarta.validation.Valid @Size(max = 3) List<AttachmentRequest> attachments) {}
+
+    /** A text file read by the browser: file name and its decoded text. */
+    public record AttachmentRequest(@Size(max = 260) String name, @Size(max = 60000) String content) {}
 
     /** {@code rev}: strictly increasing per tab; older revisions never overwrite newer ones. */
     public record SaveDraftRequest(@Size(max = 20000) String content, Long rev) {}
@@ -69,11 +73,22 @@ public final class ApiDtos {
 
     /** {@code safetyUnavailable} is present (true) only on user messages whose safety check could not be done. */
     public record MessageDto(long id, String role, String content, String status, String riskLevel, Instant createdAt,
-                             Boolean safetyUnavailable) {
+                             Boolean safetyUnavailable, List<AttachmentDto> attachments) {
         public static MessageDto of(Message m) {
+            return of(m, List.of());
+        }
+
+        public static MessageDto of(Message m, List<com.mentalcare.domain.Attachment> files) {
             return new MessageDto(m.id(), m.role().name(), m.content(), m.status().name(),
                     m.riskLevel() == null ? null : m.riskLevel().name(), m.createdAt(),
-                    m.safetyUnavailable() ? Boolean.TRUE : null);
+                    m.safetyUnavailable() ? Boolean.TRUE : null,
+                    files == null || files.isEmpty() ? null : files.stream().map(AttachmentDto::of).toList());
+        }
+    }
+
+    public record AttachmentDto(long id, String name, int charCount, String content) {
+        public static AttachmentDto of(com.mentalcare.domain.Attachment a) {
+            return new AttachmentDto(a.id(), a.fileName(), a.charCount(), a.content());
         }
     }
 

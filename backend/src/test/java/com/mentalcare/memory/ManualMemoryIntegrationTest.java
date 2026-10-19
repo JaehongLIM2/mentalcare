@@ -183,7 +183,7 @@ class ManualMemoryIntegrationTest {
     @Test
     void summaryPromptV2AsksForLastingPeoplePetsAndOpenMatters() {
         PromptLoader.LoadedPrompt p = prompts.load(PromptLoader.SESSION_SUMMARY);
-        assertThat(p.version()).isEqualTo("v2");
+        assertThat(p.version()).isEqualTo("v3"); // v3 = v2 + attachment rules
         assertThat(p.content()).contains("반드시 후보로 올리는 것").contains("반려동물").contains("진행 중인 사안")
                 .contains("가치관").contains("기존 기억 목록이 \"(없음)\"이면");
     }
