@@ -206,6 +206,12 @@ export interface ModelCatalog {
   fromAccount: boolean
 }
 
+export interface DeletionResult {
+  sessionsDeleted: number
+  filesDeleted: number
+  filesFailed: number
+}
+
 export interface ErrorDto {
   message: string
   kind?: string

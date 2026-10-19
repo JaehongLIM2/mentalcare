@@ -5,6 +5,7 @@ import { streamTurn } from '../api/stream'
 import type { MessageDto, RiskLevel, SessionDetailDto } from '../api/types'
 import ChatMessage from '../components/ChatMessage'
 import SafetyBanner from '../components/SafetyBanner'
+import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 
 const END_PHRASES = ['오늘은 여기까지', '상담 끝', '그만 이야기', '여기까지 할게', '이만 끝']
 
@@ -23,6 +24,8 @@ export default function SessionPage() {
   const [errorKind, setErrorKind] = useState<string | null>(null)
   const [risk, setRisk] = useState<RiskLevel | null>(null)
   const [endHint, setEndHint] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const openingStarted = useRef(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -111,6 +114,18 @@ export default function SessionPage() {
     }
   }
 
+  const doDelete = async () => {
+    setDeleting(true)
+    try {
+      await api.deleteSession(sessionId)
+      navigate('/', { replace: true })
+    } catch (e) {
+      setError(errorMessage(e))
+      setDeleting(false)
+      setConfirmDelete(false)
+    }
+  }
+
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault()
@@ -135,8 +150,21 @@ export default function SessionPage() {
           <button className="btn danger" onClick={complete} disabled={busy || completing}>
             {completing ? '기록을 정리하는 중…' : '상담 종료'}
           </button>
+          <button className="btn sm" onClick={() => setConfirmDelete(true)} disabled={busy || completing}>
+            기록 없이 삭제
+          </button>
         </div>
       </div>
+
+      {confirmDelete && (
+        <ConfirmDeleteModal
+          title="진행 중인 상담을 삭제할까요?"
+          details={['지금까지의 대화와 체크인이 요약 없이 사라집니다.']}
+          busy={deleting}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={doDelete}
+        />
+      )}
 
       <SafetyBanner level={risk} crisisFlag={detail?.session.crisisFlag ?? false} />
       {error && (

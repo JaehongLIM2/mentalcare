@@ -1,5 +1,6 @@
 import type {
   AuthStatus,
+  DeletionResult,
   CompletionDto,
   ErrorDto,
   HomeView,
@@ -68,6 +69,8 @@ export const api = {
   activeSession: () => request<SessionDto | undefined>('GET', '/api/sessions/active'),
   session: (id: number) => request<SessionDetailDto>('GET', `/api/sessions/${id}`),
   completeSession: (id: number) => request<CompletionDto>('POST', `/api/sessions/${id}/complete`),
+  deleteSession: (id: number) => request<DeletionResult>('DELETE', `/api/sessions/${id}`),
+  deleteAllData: () => request<DeletionResult>('DELETE', '/api/data', { confirmation: 'DELETE' }),
 
   memories: (status?: MemoryStatus[] | 'ALL') => {
     const q = status === undefined ? '' : status === 'ALL' ? '?status=ALL' : `?status=${status.join(',')}`

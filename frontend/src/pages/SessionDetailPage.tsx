@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Link, useLocation, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, errorMessage } from '../api/client'
 import type { CompletionDto, SessionDetailDto } from '../api/types'
 import ChatMessage from '../components/ChatMessage'
+import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import SummaryView from '../components/SummaryView'
 import { METRICS } from '../util/format'
 
@@ -14,10 +15,25 @@ export default function SessionDetailPage() {
   const [detail, setDetail] = useState<SessionDetailDto | null>(null)
   const [tab, setTab] = useState<'summary' | 'transcript'>('summary')
   const [error, setError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const navigate = useNavigate()
 
   useEffect(() => {
     api.session(sessionId).then(setDetail).catch((e) => setError(errorMessage(e)))
   }, [sessionId])
+
+  const doDelete = async () => {
+    setDeleting(true)
+    try {
+      await api.deleteSession(sessionId)
+      navigate('/history', { replace: true })
+    } catch (e) {
+      setError(errorMessage(e))
+      setDeleting(false)
+      setConfirmDelete(false)
+    }
+  }
 
   if (error) return <div className="alert error">{error}</div>
   if (!detail) return <div className="muted">불러오는 중…</div>
@@ -39,8 +55,23 @@ export default function SessionDetailPage() {
           {session.status === 'ACTIVE' && (
             <Link className="btn primary sm" to={`/session/${session.id}`}>이어서 진행</Link>
           )}
+          <button className="btn danger sm" onClick={() => setConfirmDelete(true)}>이 상담 삭제</button>
         </div>
       </div>
+
+      {confirmDelete && (
+        <ConfirmDeleteModal
+          title={`${session.date} 상담을 삭제할까요?`}
+          details={[
+            '이 상담의 대화 원문, 체크인, AI 요약, 태그, 안전 기록',
+            '이 상담에서만 관찰된 기억 후보 (다른 상담에서도 관찰된 기억은 남습니다)',
+            summary?.markdownPath ? 'Markdown 기록 파일' : '',
+          ].filter(Boolean)}
+          busy={deleting}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={doDelete}
+        />
+      )}
 
       {completion && (
         <div className="alert info">

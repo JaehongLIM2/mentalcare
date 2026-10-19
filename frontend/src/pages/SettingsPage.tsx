@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api, errorMessage } from '../api/client'
-import type { ModelCatalog, SettingsDto } from '../api/types'
+import type { DeletionResult, ModelCatalog, SettingsDto } from '../api/types'
 import ChatGptConnect from '../components/ChatGptConnect'
+import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingsDto | null>(null)
@@ -17,6 +18,9 @@ export default function SettingsPage() {
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmWipe, setConfirmWipe] = useState(false)
+  const [wiping, setWiping] = useState(false)
+  const [wipeResult, setWipeResult] = useState<DeletionResult | null>(null)
 
   const apply = (s: SettingsDto) => {
     setSettings(s)
@@ -50,6 +54,20 @@ export default function SettingsPage() {
       setError(errorMessage(e))
     } finally {
       setBusy(false)
+    }
+  }
+
+  const wipeAll = async () => {
+    setWiping(true)
+    setError(null)
+    try {
+      setWipeResult(await api.deleteAllData())
+      setConfirmWipe(false)
+      loadAll(false)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setWiping(false)
     }
   }
 
@@ -174,6 +192,36 @@ export default function SettingsPage() {
           모든 OpenAI 요청은 <code>store: false</code>로 전송되며, 상담 원문과 토큰은 로그에 기록되지 않습니다.
         </div>
       </div>
+
+      <div className="card" style={{ borderColor: 'var(--danger)' }}>
+        <h2 style={{ color: 'var(--danger)' }}>데이터 삭제</h2>
+        <p className="muted small">
+          모든 상담 기록(대화 원문, 체크인, 요약, 기억, 태그, 안전 기록, Markdown 파일)을 영구 삭제합니다. 프로필·목표·모델 설정과 ChatGPT
+          연결은 유지됩니다. 개별 상담은 상담 상세 화면에서 삭제할 수 있습니다.
+        </p>
+        {wipeResult && (
+          <div className="alert info">
+            상담 {wipeResult.sessionsDeleted}건과 Markdown 파일 {wipeResult.filesDeleted}개를 삭제했습니다.
+            {wipeResult.filesFailed > 0 && ` 파일 ${wipeResult.filesFailed}개는 삭제하지 못했습니다.`}
+          </div>
+        )}
+        <button className="btn danger" onClick={() => setConfirmWipe(true)}>모든 상담 데이터 삭제</button>
+      </div>
+
+      {confirmWipe && (
+        <ConfirmDeleteModal
+          title="모든 상담 데이터를 삭제할까요?"
+          details={[
+            '모든 상담의 대화 원문, 체크인, AI 요약, 태그, 안전 기록',
+            '모든 장기 기억(후보·확정·보관)과 API 사용량 기록',
+            `Markdown 기록 파일 (${settings.markdownDir})`,
+          ]}
+          typeToConfirm="삭제"
+          busy={wiping}
+          onCancel={() => setConfirmWipe(false)}
+          onConfirm={wipeAll}
+        />
+      )}
 
       <div className="card soft">
         <h2>최근 30일 API 사용량</h2>
