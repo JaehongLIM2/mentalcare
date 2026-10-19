@@ -193,6 +193,7 @@ export interface AuthStatus {
   credentialProvider: string
   credentialsDir: string
   apiKeyConfigured: boolean
+  storageError?: string | null
 }
 
 export interface ModelInfo {
@@ -222,6 +223,7 @@ export interface ImportPreview {
   memoryCandidateCount: number
   coreContextChars: number
   warnings: string[]
+  alreadyImportedSessionId?: number | null
 }
 
 export interface ImportResult {

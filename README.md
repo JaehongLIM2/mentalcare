@@ -88,9 +88,8 @@ scripts\dev-frontend.cmd    # http://127.0.0.1:5173  (Vite, /api → 8080 proxy)
 ### 2. 단일 jar로 실행 (매주 사용할 때)
 
 ```
-scriptsuild.cmd   # frontend 빌드 → backend/src/main/resources/static → backend	arget\mentalcare.jar
-scripts
-un.cmd     # java -jar backend	arget\mentalcare.jar (콘솔 창 유지)
+scripts\build.cmd   # frontend 빌드 → backend/src/main/resources/static → backend\target\mentalcare.jar
+scripts\run.cmd     # java -jar backend\target\mentalcare.jar (콘솔 창 유지)
 ```
 
 http://127.0.0.1:8080 을 엽니다. 서버는 `127.0.0.1`에만 바인딩됩니다.
@@ -102,7 +101,7 @@ http://127.0.0.1:8080 을 엽니다. 서버는 `127.0.0.1`에만 바인딩됩니
 | `MentalCare 시작.cmd` | `javaw.exe`로 백그라운드 실행(콘솔 없음) → `/api/health` 준비 대기 → 기본 브라우저로 http://127.0.0.1:8080 열기. 이미 실행 중이면 브라우저만 엽니다. |
 | `MentalCare 종료.cmd` | `mentalcare.jar`를 실행 중인 프로세스만 정상 종료(`POST /api/system/shutdown`), 15초 내 안 끝나면 강제 종료. |
 
-PID와 로그는 `.run\` 폴더(git 제외)에 남습니다. 처음 한 번은 `scriptsuild.cmd`로 jar를 만들어야 합니다. 자세한 동작과 jpackage(`MentalCare.exe`) 검토는 [docs/PACKAGING.md](docs/PACKAGING.md)를 보세요.
+PID와 로그는 `.run\` 폴더(git 제외)에 남습니다. 처음 한 번은 `scripts\build.cmd`로 jar를 만들어야 합니다. 두 스크립트는 이 저장소의 jar 절대경로를 실행 중인 프로세스만 다루므로 다른 Java 프로그램이나 다른 복사본은 건드리지 않습니다. 다른 포트로 띄우려면 `powershell -File scripts\start-background.ps1 -Port 8081`처럼 실행하면 OAuth 복귀 주소와 종료 스크립트의 포트도 함께 맞춰집니다. 자세한 동작과 jpackage(`MentalCare.exe`) 검토는 [docs/PACKAGING.md](docs/PACKAGING.md)를 보세요.
 
 ### 3. Docker
 
@@ -114,12 +113,12 @@ docker compose up --build
 - 상담 데이터·Markdown·설정·암호화된 인증 정보는 호스트의 `./data`에 bind mount되어 컨테이너 삭제/이미지 업데이트 후에도 유지됩니다.
 - 이미지에는 `data/`, `.env`, `*.db`, Markdown이 들어가지 않습니다(`.dockerignore`).
 - Linux 호스트에서 `./data` 권한 문제가 있으면 `chown -R 1000:1000 data` 또는 compose의 `user:` 줄을 활성화하세요.
-- 영속성/바인딩 검증 스크립트: `bash scripts/docker-persistence-test.sh`
+- 영속성/바인딩 검증 스크립트: `bash scripts/docker-persistence-test.sh` — 별도 compose 프로젝트(`mentalcare-test`), 임시 데이터 폴더, 포트 18080을 사용하므로 실제 `./data`와 실행 중인 컨테이너에 영향이 없습니다.
 
 ### 4. 테스트
 
 ```
-cd backend  && mvn test                 # 74 tests
+cd backend  && mvn test                 # 92 tests
 cd frontend && npm run typecheck && npm run test:security && npm run build && npm audit
 ```
 

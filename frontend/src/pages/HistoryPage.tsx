@@ -4,12 +4,33 @@ import { api, errorMessage } from '../api/client'
 import type { SessionListItemDto } from '../api/types'
 
 export default function HistoryPage() {
+  const PAGE = 50
   const [items, setItems] = useState<SessionListItemDto[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+
+  const loadPage = (offset: number) =>
+    api.listSessions(PAGE, offset).then((page) => {
+      setItems((prev) => (offset === 0 || !prev ? page : [...prev, ...page]))
+      setHasMore(page.length === PAGE)
+    })
 
   useEffect(() => {
-    api.listSessions(100).then(setItems).catch((e) => setError(errorMessage(e)))
+    loadPage(0).catch((e) => setError(errorMessage(e)))
   }, [])
+
+  const loadMore = async () => {
+    if (!items) return
+    setLoadingMore(true)
+    try {
+      await loadPage(items.length)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   if (error) return <div className="alert error">{error}</div>
   if (!items) return <div className="muted">불러오는 중…</div>
@@ -60,6 +81,13 @@ export default function HistoryPage() {
             )}
           </Link>
         ))}
+        {hasMore && (
+          <div style={{ textAlign: 'center', paddingTop: 12 }}>
+            <button className="btn" onClick={loadMore} disabled={loadingMore}>
+              {loadingMore ? '불러오는 중…' : '이전 기록 더 보기'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

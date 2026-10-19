@@ -1,25 +1,28 @@
 # docker compose up --build
 # One container, no database server, no proxy. Counseling data lives on the host in ./data.
+#
+# Overridable for tests (see scripts/docker-persistence-test.sh):
+#   MENTALCARE_HOST_DATA  host directory mounted at /data   (default ./data)
+#   MENTALCARE_HOST_PORT  host loopback port                 (default 8080)
 services:
   mentalcare:
     build: .
     image: mentalcare:local
-    container_name: mentalcare
     ports:
       # Bound to the host loopback only: not reachable from the LAN unless you change this line.
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${MENTALCARE_HOST_PORT:-8080}:8080"
     volumes:
       # SQLite, Markdown archive, settings and encrypted OAuth credentials persist here
       # (survives `docker compose down`, image rebuilds and updates).
-      - ./data:/data
+      - ${MENTALCARE_HOST_DATA:-./data}:/data
     env_file:
       - path: .env
         required: false
     environment:
       MENTALCARE_DATA_DIR: /data
-      MENTALCARE_PUBLIC_URL: http://127.0.0.1:8080
+      MENTALCARE_PUBLIC_URL: http://127.0.0.1:${MENTALCARE_HOST_PORT:-8080}
       # OPENAI_AUTH_MODE defaults to chatgpt (Sign in with ChatGPT). Only set api-key for development.
-    # On Linux hosts make ./data writable by uid 1000 (chown -R 1000:1000 data) or run as yourself:
+    # On Linux hosts make the data dir writable by uid 1000 (chown -R 1000:1000 data) or run as yourself:
     # user: "${UID:-1000}:${GID:-1000}"
     read_only: true
     tmpfs:

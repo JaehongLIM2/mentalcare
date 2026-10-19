@@ -252,12 +252,17 @@ export default function SettingsPage() {
                 <tr><th>핵심 맥락</th><td>{importPreview.coreContextChars.toLocaleString()}자</td></tr>
               </tbody>
             </table>
+            {importPreview.alreadyImportedSessionId && (
+              <div className="alert warn">
+                같은 내용의 파일이 이미 상담 #{importPreview.alreadyImportedSessionId}로 들어와 있습니다. 다시 가져오면 거부됩니다.
+              </div>
+            )}
             {importPreview.warnings.length > 0 && (
               <ul className="small" style={{ color: 'var(--warn)' }}>
                 {importPreview.warnings.map((w, i) => <li key={i}>{w}</li>)}
               </ul>
             )}
-            <button className="btn primary" onClick={runImport} disabled={importing} style={{ marginTop: 8 }}>
+            <button className="btn primary" onClick={runImport} disabled={importing || !!importPreview.alreadyImportedSessionId} style={{ marginTop: 8 }}>
               {importing ? '가져오는 중…' : '가져오기'}
             </button>
           </div>

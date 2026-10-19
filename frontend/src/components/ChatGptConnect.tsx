@@ -88,6 +88,12 @@ export default function ChatGptConnect({ compact = false, onChange }: Props) {
       {!compact && <h2>ChatGPT 계정</h2>}
       {error && <div className="alert error">{error}</div>}
       {notice && <div className="alert info">{notice}</div>}
+      {status?.storageError && (
+        <div className="alert error">
+          저장된 자격 증명 파일을 읽을 수 없습니다 (다른 환경에서 암호화되었거나 손상됨). 기존 연결을 덮어쓰지 않도록 로그인을 막고 있습니다.
+          원래 환경에서 연결을 해제하거나, 파일을 직접 옮긴 뒤 다시 시도하세요: <code>{status.credentialsDir}</code>
+        </div>
+      )}
 
       {!connected ? (
         <div className="stack">
@@ -96,7 +102,7 @@ export default function ChatGptConnect({ compact = false, onChange }: Props) {
               ? 'ChatGPT 연결이 만료되었거나 해제되었습니다. 다시 로그인하세요.'
               : '상담을 시작하려면 ChatGPT 계정으로 로그인하고 ChatGPT 플랜 사용을 승인하세요. API 키를 복사해 넣을 필요가 없습니다.'}
           </p>
-          <button className="btn primary" onClick={() => start(false)} disabled={busy}>
+          <button className="btn primary" onClick={() => start(false)} disabled={busy || !!status?.storageError}>
             <ChatGptMark /> Continue with ChatGPT
           </button>
           <p className="muted small">

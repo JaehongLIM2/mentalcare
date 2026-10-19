@@ -53,6 +53,7 @@ export async function streamTurn(
   const reader = res.body.getReader()
   const decoder = new TextDecoder('utf-8')
   let buffer = ''
+  let terminal = false // a done or error event was received
 
   const dispatch = (chunk: string) => {
     let event = 'message'
@@ -86,9 +87,11 @@ export async function streamTurn(
         handlers.onDelta(String(obj.text ?? ''))
         break
       case 'done':
+        terminal = true
         handlers.onDone?.(obj as unknown as MessageDto)
         break
       case 'error':
+        terminal = true
         handlers.onError(String(obj.message ?? '오류'), obj.kind === undefined ? undefined : String(obj.kind))
         break
       default:
@@ -109,6 +112,9 @@ export async function streamTurn(
       }
     }
     if (buffer.trim()) dispatch(buffer)
+    if (!terminal && !signal?.aborted) {
+      handlers.onError('응답이 완료되기 전에 연결이 끊겼습니다. 저장된 내용은 새로고침 후 확인하세요.', 'STREAM_INTERRUPTED')
+    }
   } catch {
     if (!signal?.aborted) handlers.onError('응답 스트리밍이 중단되었습니다.', 'STREAM_INTERRUPTED')
   }

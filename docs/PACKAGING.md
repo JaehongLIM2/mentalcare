@@ -10,7 +10,7 @@
 | `scripts\stop.ps1` | `POST /api/system/shutdown`(정상 종료: SQLite WAL checkpoint, 커넥션 정리) → 15초 내 종료 안 되면 `Stop-Process -Force` |
 | `.run\mentalcare.pid`, `.run\mentalcare.log` | PID와 애플리케이션 로그 (git/docker 제외) |
 
-중복 실행 방지: (1) PID 파일의 프로세스가 아직 `mentalcare.jar`를 실행 중이면 재사용, (2) PID 파일이 없어도 `mentalcare.jar`를 실행 중인 java/javaw가 있으면 재사용, (3) 8080 포트를 다른 프로그램이 쓰고 있으면 오류 창. 종료 스크립트는 **명령줄에 `mentalcare.jar`가 포함된 프로세스만** 대상으로 하므로 다른 Java 프로그램에는 손대지 않습니다.
+중복 실행 방지: 시작 절차 전체를 저장소별 named Mutex로 직렬화한 뒤 (1) PID 파일의 프로세스가 아직 **이 저장소의 jar 절대경로**를 실행 중이면 재사용, (2) PID 파일이 없어도 같은 절대경로의 jar를 실행 중인 java/javaw가 있으면 재사용, (3) 포트를 다른 프로그램이 쓰고 있으면 오류 창, (4) 준비 확인 시 포트에 응답한 PID가 우리가 띄운 PID와 같은지 대조. PID 파일에는 PID·포트·jar 경로를 기록하고, `-Port`를 바꾸면 OAuth 복귀 주소(`openai.siwc.public-base-url`)도 함께 넘깁니다. 종료 스크립트는 같은 절대경로 조건을 쓰므로 다른 복사본이나 `mentalcare.jar.backup` 같은 이름은 대상이 아닙니다.
 
 데이터 영향: 스크립트는 `MENTALCARE_DATA_DIR`(기본 `<repo>\data`)와 `JAVA_HOME`만 환경변수로 넘깁니다. 상담 DB, Markdown, `credentials/`는 읽거나 쓰지 않습니다. 정상 종료 경로를 먼저 쓰므로 강제 종료보다 안전하며, 강제 종료가 되더라도 SQLite WAL과 credential의 원자적 쓰기 덕분에 손상되지 않습니다.
 

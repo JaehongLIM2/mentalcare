@@ -32,12 +32,18 @@ export default function SessionPage() {
   const scrollDown = () => bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
 
   const runTurn = useCallback(
-    async (url: string, body: unknown | null) => {
+    async (url: string, body: unknown | null, pending?: { tempId: number; text: string }) => {
       setBusy(true)
       setError(null)
       setStreamingText('')
+      let userSaved = false
       await streamTurn(url, body, {
-        onUserSaved: () => {},
+        onUserSaved: (messageId) => {
+          userSaved = true
+          if (pending) {
+            setMessages((prev) => prev.map((m) => (m.id === pending.tempId ? { ...m, id: messageId } : m)))
+          }
+        },
         onSafety: (level) => setRisk(level),
         onDelta: (t) => setStreamingText((prev) => (prev ?? '') + t),
         onDone: (m) => {
@@ -45,7 +51,14 @@ export default function SessionPage() {
           setStreamingText(null)
         },
         onError: (msg, kind) => {
-          setError(msg)
+          if (pending && !userSaved) {
+            // the server never stored it: take it off the screen and give the text back
+            setMessages((prev) => prev.filter((m) => m.id !== pending.tempId))
+            setInput((current) => (current.trim() ? current : pending.text))
+            setError(`${msg} 입력한 내용은 저장되지 않아 입력란에 되돌려 두었습니다.`)
+          } else {
+            setError(msg)
+          }
           setErrorKind(kind ?? null)
           setStreamingText(null)
         },
@@ -89,8 +102,9 @@ export default function SessionPage() {
     const text = input.trim()
     if (!text || busy) return
     setInput('')
+    const tempId = -Date.now()
     const optimistic: MessageDto = {
-      id: -Date.now(),
+      id: tempId,
       role: 'USER',
       content: text,
       status: 'COMPLETE',
@@ -98,7 +112,7 @@ export default function SessionPage() {
     }
     setMessages((prev) => [...prev, optimistic])
     if (END_PHRASES.some((p) => text.includes(p))) setEndHint(true)
-    await runTurn(`/api/sessions/${sessionId}/messages`, { content: text })
+    await runTurn(`/api/sessions/${sessionId}/messages`, { content: text }, { tempId, text })
   }
 
   const complete = async () => {
