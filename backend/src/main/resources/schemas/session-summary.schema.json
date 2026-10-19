@@ -1,0 +1,35 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "title": { "type": "string" },
+    "topics": { "type": "array", "items": { "type": "string" } },
+    "keyEvents": { "type": "array", "items": { "type": "string" } },
+    "emotions": { "type": "array", "items": { "type": "string" } },
+    "userThoughts": { "type": "array", "items": { "type": "string" } },
+    "observedPatterns": { "type": "array", "items": { "type": "string" } },
+    "discoveries": { "type": "array", "items": { "type": "string" } },
+    "actionItems": { "type": "array", "items": { "type": "string" } },
+    "nextSessionTopics": { "type": "array", "items": { "type": "string" } },
+    "memoryCandidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "content": { "type": "string" },
+          "kind": { "type": "string", "enum": ["USER_STATED", "AI_OBSERVED"] },
+          "category": { "type": "string", "enum": ["concern", "pattern", "relationship", "goal", "event", "change", "other"] },
+          "reason": { "type": "string" },
+          "matchesExistingMemoryId": { "type": ["integer", "null"] }
+        },
+        "required": ["content", "kind", "category", "reason", "matchesExistingMemoryId"]
+      }
+    },
+    "tags": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": [
+    "title", "topics", "keyEvents", "emotions", "userThoughts", "observedPatterns",
+    "discoveries", "actionItems", "nextSessionTopics", "memoryCandidates", "tags"
+  ]
+}

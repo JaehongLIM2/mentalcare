@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.5.16</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.mentalcare</groupId>
+  <artifactId>mentalcare-backend</artifactId>
+  <version>0.1.0</version>
+  <name>mentalcare-backend</name>
+  <description>Personal AI counseling and self-reflection app (local, single user)</description>
+
+  <properties>
+    <java.version>21</java.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <sqlite-jdbc.version>3.53.4.0</sqlite-jdbc.version>
+    <nimbus-jose-jwt.version>10.10</nimbus-jose-jwt.version>
+    <jna.version>5.19.1</jna.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-jdbc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.xerial</groupId>
+      <artifactId>sqlite-jdbc</artifactId>
+      <version>${sqlite-jdbc.version}</version>
+    </dependency>
+
+    <!-- ID token (OpenID Connect) signature + claims verification for Sign in with ChatGPT -->
+    <dependency>
+      <groupId>com.nimbusds</groupId>
+      <artifactId>nimbus-jose-jwt</artifactId>
+      <version>${nimbus-jose-jwt.version}</version>
+    </dependency>
+    <!-- Windows DPAPI (CryptProtectData) for OAuth credential protection; unused on other platforms -->
+    <dependency>
+      <groupId>net.java.dev.jna</groupId>
+      <artifactId>jna-platform</artifactId>
+      <version>${jna.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>mentalcare</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

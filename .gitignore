@@ -1,0 +1,24 @@
+# --- secrets & personal data (never commit) ---
+.env
+.env.*
+!.env.example
+data/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# --- build output ---
+backend/target/
+backend/src/main/resources/static/
+frontend/dist/
+frontend/node_modules/
+node_modules/
+
+# --- tooling ---
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+*.log

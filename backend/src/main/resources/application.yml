@@ -1,0 +1,90 @@
+server:
+  # Local-first: bind to loopback only. Inside Docker this is overridden to 0.0.0.0 and the
+  # host-side port mapping is restricted to 127.0.0.1 instead (see docker-compose.yml).
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: 8080
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-exception: false
+
+spring:
+  application:
+    name: mentalcare
+  datasource:
+    url: jdbc:sqlite:${mentalcare.data-dir}/mentalcare.db?journal_mode=WAL&busy_timeout=5000&foreign_keys=true
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      maximum-pool-size: 4
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+  mvc:
+    async:
+      request-timeout: 600000
+  jackson:
+    default-property-inclusion: non_null
+
+mentalcare:
+  # All counseling data (SQLite + Markdown) lives under this directory. Git-ignored.
+  data-dir: ${MENTALCARE_DATA_DIR:../data}
+  markdown-dir: ${mentalcare.data-dir}/sessions
+  # OAuth credentials (encrypted) live apart from the counseling database.
+  credentials-dir: ${MENTALCARE_CREDENTIALS_DIR:${mentalcare.data-dir}/credentials}
+  # How many recent completed sessions are summarized into the context.
+  recent-session-count: 3
+  # Home screen: recommend the next session this many days after the last one.
+  recommended-interval-days: 7
+  context:
+    max-active-memories: 30
+    max-list-items-per-summary: 5
+  memory:
+    # A CANDIDATE becomes ACTIVE automatically after this many distinct sessions observed it.
+    auto-activate-user-stated: 2
+    auto-activate-ai-observed: 3
+  safety:
+    # Moderation category scores at/above this are treated as a signal (not a verdict).
+    moderation-threshold: 0.4
+    # Number of recent messages given to the crisis assessment for context.
+    assessment-context-messages: 6
+    emergency-resources:
+      - "한국: 자살예방상담전화 109 (24시간), 정신건강위기상담 1577-0199, 긴급 112 / 119"
+      - "日本: いのちの電話 0570-783-556, よりそいホットライン 0120-279-338, 緊急 110 / 119"
+  security:
+    # Requests whose Host header is not one of these are rejected (DNS-rebinding / LAN exposure guard).
+    # Add your hostname here only if you deliberately expose the app beyond this PC.
+    allowed-hosts: ${MENTALCARE_ALLOWED_HOSTS:127.0.0.1,localhost,[::1]}
+
+openai:
+  # chatgpt  = Sign in with ChatGPT (default; requests use the user's ChatGPT plan)
+  # api-key  = developer/testing mode with OPENAI_API_KEY (pay-per-use; never used as a fallback)
+  auth-mode: ${OPENAI_AUTH_MODE:chatgpt}
+  api-key: ${OPENAI_API_KEY:}
+  base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+  # Preferred models. With Sign in with ChatGPT the available list is discovered from the account;
+  # these are only defaults and are replaced by an available model when they are not offered.
+  counseling-model: ${OPENAI_COUNSELING_MODEL:gpt-6.1-sol}
+  utility-model: ${OPENAI_UTILITY_MODEL:gpt-6-luna}
+  moderation-model: ${OPENAI_MODERATION_MODEL:omni-moderation-latest}
+  counseling-reasoning-effort: ${OPENAI_COUNSELING_REASONING:medium}
+  utility-reasoning-effort: ${OPENAI_UTILITY_REASONING:low}
+  connect-timeout-seconds: 15
+  request-timeout-seconds: 120
+  counseling-max-output-tokens: 2000
+  utility-max-output-tokens: 4000
+  siwc:
+    issuer: https://auth.openai.com
+    resource: https://api.openai.com/v1
+    app-name: mentalcare
+    scopes: "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct"
+    callback-path: /api/auth/chatgpt/callback
+    # Base URL the browser uses to reach this app; the OAuth redirect_uri is built from it.
+    # Must stay on 127.0.0.1 (OpenAI requires a loopback IP, not "localhost").
+    public-base-url: ${MENTALCARE_PUBLIC_URL:http://127.0.0.1:8080}
+
+logging:
+  level:
+    root: INFO
+    com.mentalcare: INFO
+    # Never raise HTTP client logging to a level that would print request bodies.

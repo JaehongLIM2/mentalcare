@@ -1,0 +1,8 @@
+# Normalize line endings: LF in the repository; shell scripts must stay LF even on Windows checkouts.
+* text=auto
+*.sh text eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.png binary
+*.jpg binary
+*.ico binary

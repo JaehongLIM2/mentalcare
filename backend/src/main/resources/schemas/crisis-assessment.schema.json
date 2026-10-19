@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "riskLevel": { "type": "string", "enum": ["NONE", "LOW", "ELEVATED", "IMMINENT"] },
+    "reason": { "type": "string" },
+    "recommendedAction": { "type": "string" }
+  },
+  "required": ["riskLevel", "reason", "recommendedAction"]
+}
