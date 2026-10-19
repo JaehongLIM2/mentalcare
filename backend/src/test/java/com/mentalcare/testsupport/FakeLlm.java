@@ -18,6 +18,8 @@ import java.util.List;
 public class FakeLlm implements LlmClient {
     public final List<CounselingContext> contexts = new ArrayList<>();
     public final List<String> summaryTranscripts = new ArrayList<>();
+    /** What each crisis assessment was given (recent conversation and any attachment excerpt). */
+    public final List<String> assessmentInputs = new ArrayList<>();
     public String reply = "지난 한 주는 어떻게 지내셨나요?";
     public SessionSummaryOutput summary = defaultSummary();
     public RuntimeException summaryFailure;
@@ -47,6 +49,7 @@ public class FakeLlm implements LlmClient {
         gate = null;
         contexts.clear();
         summaryTranscripts.clear();
+        assessmentInputs.clear();
         summaryFailure = null;
         streamFailure = null;
         crisisLevel = "NONE";
@@ -79,6 +82,7 @@ public class FakeLlm implements LlmClient {
 
     @Override
     public LlmResult<CrisisAssessmentOutput> assessCrisis(String model, String instructions, String recentConversation) {
+        assessmentInputs.add(recentConversation);
         if (assessmentFailure != null) throw assessmentFailure;
         return new LlmResult<>(new CrisisAssessmentOutput(crisisLevel, "test", "test"), LlmUsage.none("fake-counsel"));
     }

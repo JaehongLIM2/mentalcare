@@ -51,4 +51,15 @@ public class CrisisKeywordDetector {
         }
         return false;
     }
+
+    /** Start offsets of every match, ascending (used to excerpt long attachments around the signals). */
+    public List<Integer> matchOffsets(String text) {
+        if (text == null || text.isBlank()) return List.of();
+        java.util.TreeSet<Integer> offsets = new java.util.TreeSet<>();
+        for (Pattern p : PATTERNS) {
+            java.util.regex.Matcher m = p.matcher(text);
+            while (m.find()) offsets.add(m.start());
+        }
+        return List.copyOf(offsets);
+    }
 }

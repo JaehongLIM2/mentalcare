@@ -145,7 +145,7 @@ public class CounselingService {
 
             // 2. Safety layer.
             List<Message> all = messages.findBySession(sessionId);
-            SafetyDecision decision = safety.evaluate(session, userMessage, all);
+            SafetyDecision decision = safety.evaluate(session, userMessage, all, attached);
             if (decision.riskLevel() != RiskLevel.NONE) {
                 messages.updateRisk(userMessage.id(), decision.riskLevel());
                 listener.onSafety(decision.riskLevel());

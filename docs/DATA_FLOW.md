@@ -79,7 +79,7 @@ flowchart LR
 - `text.format`: strict JSON schema(`session-summary.schema.json`).
 
 ### 8. Spring Boot → OpenAI (`POST /v1/responses`, 위기 평가)
-- Moderation을 쓸 수 있을 때는 신호(Moderation 또는 키워드)가 있을 때만, **Moderation을 쓸 수 없을 때는 모든 사용자 메시지**에 대해 실행. `input`: 최근 메시지 최대 6개. strict JSON schema.
+- Moderation을 쓸 수 있을 때는 신호(Moderation 또는 키워드)가 있을 때만, **Moderation을 쓸 수 없을 때는 모든 사용자 메시지**에 대해 실행. 파일이 첨부된 메시지도 항상 실행. `input`: 최근 메시지 최대 6개 + 첨부가 있으면 그 발췌(키워드 주변 또는 앞뒤, 합계 약 4,000자, "사용자 본인의 말이 아닐 수 있음" 표시). strict JSON schema.
 - (첨부 파일) 상담 응답 요청에서 첨부 원문은 **그 메시지에 답하는 턴에만** 사용자 메시지 안의 `<<<DATA 첨부 파일: …>>>` 블록으로 전송되고, 이후 턴에는 파일 이름과 글자 수만 전송됩니다. 요약 요청(7번)에는 파일마다 앞부분 2,000자만 자료 블록으로 전송됩니다.
 - 평가에 실패하면 결과는 "위험 없음"이 아니라 `UNAVAILABLE`로 기록되고(`safety_events`, `messages.safety_status`), 브라우저에 `safety_unavailable` 이벤트로 알립니다.
 

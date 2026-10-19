@@ -10,6 +10,7 @@ import com.mentalcare.ai.ModerationSignal;
 import com.mentalcare.ai.model.CrisisAssessmentOutput;
 import com.mentalcare.config.AppProperties;
 import com.mentalcare.context.SafetyMode;
+import com.mentalcare.counseling.Attachments;
 import com.mentalcare.domain.Enums.MessageRole;
 import com.mentalcare.domain.Enums.MessageStatus;
 import com.mentalcare.domain.Enums.RiskLevel;
@@ -288,5 +289,105 @@ class SafetyServiceTest {
 
         assertThat(d.riskLevel()).isEqualTo(RiskLevel.NONE);
         assertThat(d.mode()).isEqualTo(SafetyMode.CAUTION);
+    }
+
+    // ---- attachments: the counselor reads them in full, so the safety check must see them too ----
+
+    private static List<Attachments.Input> attached(String content) {
+        return List.of(new Attachments.Input("메모.txt", content));
+    }
+
+    @Test
+    void riskWrittenOnlyInTheAttachmentIsAssessedEvenWithWorkingModeration() {
+        when(llm.moderate(anyString())).thenReturn(ModerationSignal.none());
+        when(llm.assessCrisis(anyString(), anyString(), anyString())).thenReturn(assessed("ELEVATED"));
+        Message m = user("이 메모 좀 봐줘");
+
+        SafetyDecision d = service.evaluate(SESSION, m, List.of(m), attached("요즘 밤마다 죽고 싶다는 생각이 든다."));
+
+        assertThat(d.riskLevel()).isEqualTo(RiskLevel.ELEVATED);
+        assertThat(d.mode()).isEqualTo(SafetyMode.CAUTION);
+        ArgumentCaptor<String> input = ArgumentCaptor.forClass(String.class);
+        verify(llm).assessCrisis(anyString(), anyString(), input.capture());
+        assertThat(input.getValue()).contains("[첨부 자료]", "본인의 말이라는 보장이 없습니다", "죽고 싶다", "메모.txt");
+        verify(events).insert(eq(1L), eq(10L), eq(false), any(), eq(true), eq(RiskLevel.ELEVATED), any());
+    }
+
+    @Test
+    void keywordFreeRiskInAFileOnlyMessageIsScreened() {
+        // no keyword anywhere and moderation silent: a message with files is still assessed
+        when(llm.moderate(anyString())).thenReturn(ModerationSignal.none());
+        when(llm.assessCrisis(anyString(), anyString(), anyString())).thenReturn(assessed("ELEVATED"));
+        Message m = user("");
+
+        SafetyDecision d = service.evaluate(SESSION, m, List.of(m), attached(NO_KEYWORD_RISK));
+
+        assertThat(d.riskLevel()).isEqualTo(RiskLevel.ELEVATED);
+        ArgumentCaptor<String> input = ArgumentCaptor.forClass(String.class);
+        verify(llm).assessCrisis(anyString(), anyString(), input.capture());
+        assertThat(input.getValue()).contains(NO_KEYWORD_RISK);
+    }
+
+    @Test
+    void anotherPersonsWordsAreLabelledAndTheAssessmentDecides() {
+        // a chat log where the other person says it: passed on as material, and the assessment may keep it NONE
+        when(llm.moderate(anyString())).thenReturn(ModerationSignal.none());
+        when(llm.assessCrisis(anyString(), anyString(), anyString())).thenReturn(assessed("NONE"));
+        Message m = user("친구가 이런 말을 했는데 내가 뭐라고 해야 할까");
+
+        SafetyDecision d = service.evaluate(SESSION, m, List.of(m), attached("친구\t시험 망해서 죽고 싶다 ㅋㅋ\n나\t괜찮아?"));
+
+        assertThat(d.riskLevel()).isEqualTo(RiskLevel.NONE);
+        assertThat(d.mode()).isEqualTo(SafetyMode.NORMAL);
+        ArgumentCaptor<String> input = ArgumentCaptor.forClass(String.class);
+        verify(llm).assessCrisis(anyString(), anyString(), input.capture());
+        assertThat(input.getValue()).contains("다른 사람의 말", "자료 속 다른 사람의 말은 사용자 본인의 위험으로 보지 않습니다");
+    }
+
+    @Test
+    void failedAssessmentOfAnAttachmentSignalStaysConservative() {
+        when(llm.moderate(anyString())).thenReturn(ModerationSignal.none());
+        when(llm.assessCrisis(anyString(), anyString(), anyString())).thenThrow(new LlmException(LlmException.Kind.TIMEOUT, "slow"));
+        Message m = user("이거 봐줘");
+
+        SafetyDecision d = service.evaluate(SESSION, m, List.of(m), attached("유서를 써 봤다"));
+
+        assertThat(d.riskLevel()).isEqualTo(RiskLevel.ELEVATED);
+        assertThat(d.unavailable()).isTrue();
+    }
+
+    @Test
+    void failedScreenOfAFileWithoutSignalIsMarkedUnchecked() {
+        when(llm.moderate(anyString())).thenReturn(ModerationSignal.none());
+        when(llm.assessCrisis(anyString(), anyString(), anyString())).thenThrow(new LlmException(LlmException.Kind.TIMEOUT, "slow"));
+        Message m = user("회의록 정리 좀 도와줘");
+
+        SafetyDecision d = service.evaluate(SESSION, m, List.of(m), attached("다음 주 일정: 월요일 회의"));
+
+        assertThat(d.riskLevel()).isEqualTo(RiskLevel.NONE);
+        assertThat(d.unavailable()).isTrue();
+    }
+
+    @Test
+    void longAttachmentsAreExcerptedAroundTheSignalWithinTheLimit() {
+        String filler = "평범한 하루 이야기. ".repeat(3_000); // ~36,000 chars
+        String text = filler + "그날은 정말 뛰어내릴 생각까지 했다." + filler;
+        String excerpt = AttachmentExcerpt.of(List.of(new Attachments.Input("긴글.txt", text)), new CrisisKeywordDetector());
+
+        assertThat(excerpt).contains("뛰어내릴 생각까지");
+        assertThat(excerpt.length()).isLessThan(AttachmentExcerpt.MAX_CHARS + 400);
+
+        String plain = AttachmentExcerpt.of(List.of(new Attachments.Input("a.txt", "앞부분" + filler + "끝부분")), new CrisisKeywordDetector());
+        assertThat(plain).contains("앞부분", "끝부분", "중략");
+        assertThat(plain.length()).isLessThan(AttachmentExcerpt.MAX_CHARS + 400);
+    }
+
+    @Test
+    void messagesWithoutFilesBehaveAsBefore() {
+        when(llm.moderate(anyString())).thenReturn(ModerationSignal.none());
+        Message m = user("오늘은 평범했어");
+
+        assertThat(service.evaluate(SESSION, m, List.of(m), List.of()).riskLevel()).isEqualTo(RiskLevel.NONE);
+        verify(llm, never()).assessCrisis(anyString(), anyString(), anyString());
     }
 }

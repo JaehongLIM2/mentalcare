@@ -208,6 +208,24 @@ class AttachmentIntegrationTest {
     }
 
     @Test
+    void riskOnlyInTheAttachmentReachesTheSafetyCheckOnTheRealTurn() {
+        Session s = sessions.start(null);
+        counseling.opening(s.id(), new Listener());
+        llm.crisisLevel = "ELEVATED";
+        List<RiskLevel> signalled = new ArrayList<>();
+        Listener turn = new Listener() {
+            @Override public void onSafety(RiskLevel r) { signalled.add(r); }
+        };
+
+        counseling.reply(s.id(), "이 메모 좀 봐줘", null, file("일기.txt", "어젯밤엔 정말 사라지고 싶었다."), turn);
+
+        assertThat(llm.assessmentInputs).hasSize(1);
+        assertThat(llm.assessmentInputs.get(0)).contains("[첨부 자료]", "일기.txt", "사라지고 싶었다");
+        assertThat(signalled).containsExactly(RiskLevel.ELEVATED);
+        completion.complete(s.id());
+    }
+
+    @Test
     void namesAreReducedToAPlainFileName() {
         assertThat(Attachments.cleanName("..\\..\\secret\\a.txt")).isEqualTo("a.txt");
         assertThat(Attachments.cleanName("/etc/x.md")).isEqualTo("x.md");

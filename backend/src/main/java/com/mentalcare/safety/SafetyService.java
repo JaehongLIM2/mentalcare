@@ -10,6 +10,7 @@ import com.mentalcare.ai.ModerationSignal;
 import com.mentalcare.ai.model.CrisisAssessmentOutput;
 import com.mentalcare.config.AppProperties;
 import com.mentalcare.context.SafetyMode;
+import com.mentalcare.counseling.Attachments;
 import com.mentalcare.domain.Enums.MessageRole;
 import com.mentalcare.domain.Enums.RiskLevel;
 import com.mentalcare.domain.Message;
@@ -76,12 +77,25 @@ public class SafetyService {
      * @param recentMessages the last few messages of the session, oldest first, including userMessage
      */
     public SafetyDecision evaluate(Session session, Message userMessage, List<Message> recentMessages) {
+        return evaluate(session, userMessage, recentMessages, List.of());
+    }
+
+    /**
+     * @param attachments files attached to {@code userMessage}. The counselor reads them in full, so they
+     *                    are checked too: keywords over the whole text, and every message with files is
+     *                    assessed with a bounded excerpt (moderation only sees the typed text).
+     */
+    public SafetyDecision evaluate(Session session, Message userMessage, List<Message> recentMessages,
+                                   List<Attachments.Input> attachments) {
         double threshold = app.safety().moderationThreshold();
+        List<Attachments.Input> files = attachments == null ? List.of() : attachments;
 
         ModerationSignal moderation = moderate(userMessage.content());
-        boolean keywordHit = keywords.matches(userMessage.content());
+        boolean attachmentKeyword = files.stream().anyMatch(f -> keywords.matches(f.content()));
+        boolean keywordHit = keywords.matches(userMessage.content()) || attachmentKeyword;
         boolean moderationHit = moderation != null && moderation.anySignal(threshold);
-        boolean screening = moderation == null && !keywordHit; // no moderation: assess every message
+        // no moderation, or files moderation did not see: assess the message even without a signal
+        boolean screening = !keywordHit && !moderationHit && (moderation == null || !files.isEmpty());
 
         if (!keywordHit && !moderationHit && !screening) {
             return SafetyDecision.none(session.crisisFlag());
@@ -93,7 +107,7 @@ public class SafetyService {
             LlmResult<CrisisAssessmentOutput> result = llm.assessCrisis(
                     models.counselingModel(),
                     prompts.load(PromptLoader.CRISIS_ASSESSMENT).content(),
-                    formatConversation(recentMessages));
+                    formatConversation(recentMessages, AttachmentExcerpt.of(files, keywords)));
             if (result == null || result.value() == null) {
                 throw new LlmException(LlmException.Kind.PARSE_FAILED, "empty crisis assessment");
             }
@@ -123,8 +137,8 @@ public class SafetyService {
         // A moderation-only hit (no keyword) that the assessment downgrades to NONE stays NONE: the
         // assessment saw the context, moderation did not.
         recordEvent(session.id(), userMessage.id(), moderation, keywordHit, level, reason);
-        log.info("safety session={} message={} moderationHit={} keywordHit={} screening={} risk={}",
-                session.id(), userMessage.id(), moderationHit, keywordHit, screening, level);
+        log.info("safety session={} message={} moderationHit={} keywordHit={} attachmentKeyword={} screening={} risk={}",
+                session.id(), userMessage.id(), moderationHit, keywordHit, attachmentKeyword, screening, level);
 
         SafetyMode mode = switch (level) {
             case IMMINENT -> SafetyMode.CRISIS;
@@ -159,14 +173,20 @@ public class SafetyService {
         }
     }
 
-    private String formatConversation(List<Message> messages) {
+    private String formatConversation(List<Message> messages, String attachmentExcerpt) {
         int max = app.safety().assessmentContextMessages();
         List<Message> window = messages.size() > max ? messages.subList(messages.size() - max, messages.size()) : messages;
         StringBuilder sb = new StringBuilder("최근 대화 (오래된 것부터):\n\n");
         for (Message m : window) {
             sb.append(m.role() == MessageRole.USER ? "[사용자] " : "[상담자] ").append(m.content().trim()).append("\n\n");
         }
-        sb.append("마지막 [사용자] 메시지를 중심으로 현재 위험 수준을 판단하세요.");
+        if (!attachmentExcerpt.isEmpty()) {
+            sb.append(attachmentExcerpt).append('\n');
+            sb.append("마지막 [사용자] 메시지와 거기 붙은 첨부 자료를 보고 사용자 본인의 현재 위험 수준을 판단하세요. ")
+                    .append("자료 속 다른 사람의 말은 사용자 본인의 위험으로 보지 않습니다.");
+        } else {
+            sb.append("마지막 [사용자] 메시지를 중심으로 현재 위험 수준을 판단하세요.");
+        }
         return sb.toString();
     }
 

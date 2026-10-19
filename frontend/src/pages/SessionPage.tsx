@@ -189,11 +189,13 @@ export default function SessionPage() {
       setPhase(pending ? 'sending' : 'generating')
       if (doneTimer.current) window.clearTimeout(doneTimer.current)
       let userSaved = false
+      let savedId: number | null = null // the server id that replaced pending.tempId
       let failedKind: string | undefined
       let finished = false
       await streamTurn(url, body, {
         onUserSaved: (messageId) => {
           userSaved = true
+          savedId = messageId
           setSafetyUnchecked(false) // a newly saved message is checked afresh
           setPhase('saved')
           if (pending) {
@@ -203,8 +205,10 @@ export default function SessionPage() {
         onSafety: (level) => setRisk(level),
         onSafetyUnavailable: () => {
           setSafetyUnchecked(true)
-          if (pending) {
-            setMessages((prev) => prev.map((m) => (m.id === pending.tempId ? { ...m, safetyUnavailable: true } : m)))
+          // the message was saved first, so by now it carries the server id, not the temporary one
+          const target = savedId ?? pending?.tempId
+          if (target !== undefined) {
+            setMessages((prev) => prev.map((m) => (m.id === target ? { ...m, safetyUnavailable: true } : m)))
           }
         },
         onContext: (_included, omittedCount) => setOmitted(omittedCount),
