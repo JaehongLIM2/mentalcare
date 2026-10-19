@@ -8,7 +8,9 @@ import SafetyBanner from '../components/SafetyBanner'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import { fmtTime } from '../util/format'
 import { DraftSaver } from '../util/draftSaver'
-import { ACCEPT, addFiles, readFile, type PendingFile } from '../util/attachments'
+import { ACCEPT, addFiles, MAX_FILES, MAX_TOTAL_CHARS, readFile, type PendingFile } from '../util/attachments'
+import { parseLineChat, type LineChat } from '../util/lineChat'
+import LineRangeModal from '../components/LineRangeModal'
 
 const END_PHRASES = ['오늘은 여기까지', '상담 끝', '그만 이야기', '여기까지 할게', '이만 끝']
 const DRAFT_DEBOUNCE_MS = 800
@@ -53,6 +55,7 @@ export default function SessionPage() {
   const [files, setFiles] = useState<PendingFile[]>([])
   const [fileError, setFileError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [lineChat, setLineChat] = useState<{ name: string; chat: LineChat } | null>(null)
   const [endHint, setEndHint] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -325,9 +328,17 @@ export default function SessionPage() {
     if (!list || list.length === 0) return
     try {
       const read = await Promise.all(Array.from(list).map(readFile))
-      const result = addFiles(files, read)
+      // A LINE export that is too long to attach whole opens the date range picker instead.
+      const used = files.reduce((n, f) => n + f.chars, 0)
+      const tooLong = read.find((f) => used + f.chars > MAX_TOTAL_CHARS && f.name.toLowerCase().endsWith('.txt'))
+      const chat = tooLong ? parseLineChat(tooLong.content) : null
+      const result = addFiles(files, chat ? read.filter((f) => f !== tooLong) : read)
       if (result.error) setFileError(result.error)
       else setFiles(result.files)
+      if (chat && tooLong && !result.error) {
+        if (result.files.length >= MAX_FILES) setFileError(`파일은 한 번에 ${MAX_FILES}개까지 첨부할 수 있습니다.`)
+        else setLineChat({ name: tooLong.name, chat })
+      }
     } catch {
       setFileError('파일을 읽지 못했습니다.')
     } finally {
@@ -508,6 +519,17 @@ export default function SessionPage() {
         )}
       </div>
 
+      {lineChat && (
+        <LineRangeModal name={lineChat.name} chat={lineChat.chat}
+          budget={MAX_TOTAL_CHARS - files.reduce((n, f) => n + f.chars, 0)}
+          onCancel={() => setLineChat(null)}
+          onAttach={(f) => {
+            const result = addFiles(files, [f])
+            if (result.error) setFileError(result.error)
+            else setFiles(result.files)
+            setLineChat(null)
+          }} />
+      )}
       <div className="composer">
         {(files.length > 0 || fileError) && (
           <div className="pending-files">
