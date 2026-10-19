@@ -22,7 +22,7 @@ public record AppProperties(
 ) {
     public record Context(int maxActiveMemories, int maxListItemsPerSummary, int importedContextMaxChars, int maxSessionChars) {
         public int importedContextMaxCharsOrDefault() {
-            return importedContextMaxChars <= 0 ? 6000 : importedContextMaxChars;
+            return importedContextMaxChars <= 0 ? 15000 : importedContextMaxChars;
         }
 
         /** Character budget for the current session's messages sent per turn (default 60,000). */

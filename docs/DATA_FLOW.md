@@ -66,7 +66,7 @@ flowchart LR
 | 필드 | 내용 | 출처 |
 |---|---|---|
 | `model` | 선택된 상담 모델 slug | 설정/카탈로그 |
-| `instructions` | 시스템 프롬프트(`counselor-system-v3`) + (안전 모드 지시) + `<<<DATA 프로필>>>` + `<<<DATA 장기 기억>>>`(ACTIVE만, 최대 30) + `<<<DATA 최근 상담 요약>>>`(최근 N회, 기본 3; 요약 필드당 최대 5항목) + `<<<DATA 이번 상담>>>`(날짜, 지난 상담과의 간격, 체크인, 메모). 첫 발화에는 `opening-cue-v3` 지시가 developer 메시지로 붙음 | DB |
+| `instructions` | 시스템 프롬프트(`counselor-system-v3`) + (안전 모드 지시) + `<<<DATA 프로필>>>` + `<<<DATA 장기 기억>>>`(ACTIVE만, 최대 30) + `<<<DATA 최근 상담 요약>>>`(최근 N회, 기본 3; 요약 필드당 최대 12항목) + `<<<DATA 이번 상담>>>`(날짜, 지난 상담과의 간격, 체크인, 메모). 첫 발화에는 `opening-cue-v3` 지시가 developer 메시지로 붙음 | DB |
 | `input[]` | 현재 세션의 모든 메시지 (`user`/`assistant`), 첫 턴에는 `developer` cue 1개 | DB |
 | `reasoning.effort` | low/medium/high | 설정 |
 | `max_output_tokens` | **API 키 모드에서만** | 설정 |
@@ -102,7 +102,7 @@ flowchart LR
 ### 11-1. 이관 기록 가져오기 (Browser → Spring Boot → SQLite)
 - 사용자가 설정 화면에서 고른 Markdown 파일이 multipart 업로드로 백엔드에 전달됩니다(같은 PC, 2MB 제한). 서버는 임의 경로를 읽지 않습니다.
 - 저장: `sessions`(kind=IMPORTED), `session_summaries`(섹션별 요약 + `importedContext`), `imported_archives`(원문 Markdown), `memories`/`memory_observations`(후보, CANDIDATE), `tags`(imported).
-- **OpenAI로 가는 것**: 이후 상담 요청의 `instructions` 안 `<<<DATA 이관된 과거 기록>>>` 블록에 각 이관 기록의 "핵심 맥락" 텍스트(총 6,000자 상한)가 들어갑니다. 원문 Markdown 전체나 섹션 전체는 보내지 않습니다. 이관 후보가 ACTIVE로 확정되면 장기 기억 블록으로도 전달됩니다.
+- **OpenAI로 가는 것**: 이후 상담 요청의 `instructions` 안 `<<<DATA 이관된 과거 기록>>>` 블록에 각 이관 기록의 "핵심 맥락" 텍스트(총 15,000자 상한)가 들어갑니다. 원문 Markdown 전체나 섹션 전체는 보내지 않습니다. 이관 후보가 ACTIVE로 확정되면 장기 기억 블록으로도 전달됩니다.
 
 ### 11-2. 백업과 복원 (Spring Boot ↔ 파일 시스템)
 - 백업: `VACUUM INTO`로 `data/backups/.snapshot-*.db`를 만들어 zip에 넣고 즉시 삭제. Markdown은 `markdownDir` 기준 상대 경로로 수록. 자격증명은 사용자가 체크한 경우에만 암호화 파일 그대로. 완성된 zip은 브라우저로 스트리밍 후 삭제되며 서버에는 남지 않음.

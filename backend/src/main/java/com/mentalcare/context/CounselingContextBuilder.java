@@ -313,6 +313,7 @@ public class CounselingContextBuilder {
         line(sb, "주요 감정", o.emotions(), max);
         line(sb, "사용자의 생각", o.userThoughts(), max);
         line(sb, "AI가 관찰한 가능성 있는 패턴(해석, 사실 아님)", o.observedPatterns(), max);
+        line(sb, "새롭게 드러난 점(해석 포함)", o.discoveries(), max);
         line(sb, "이번 주에 해보기로 한 것", o.actionItems(), max);
         line(sb, "다음 상담에서 확인할 것", o.nextSessionTopics(), max);
         sb.append("\n");

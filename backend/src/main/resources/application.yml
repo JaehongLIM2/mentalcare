@@ -46,9 +46,10 @@ mentalcare:
   recommended-interval-days: 7
   context:
     max-active-memories: 30
-    max-list-items-per-summary: 5
+    # Items per summary field passed on to later sessions (a long session can have 10+ key events).
+    max-list-items-per-summary: 12
     # Imported archives (ChatGPT export) are always in the context, capped at this many characters.
-    imported-context-max-chars: 6000
+    imported-context-max-chars: 15000
     # Character budget for the current session's messages per request; older messages are omitted first.
     max-session-chars: 60000
   memory:

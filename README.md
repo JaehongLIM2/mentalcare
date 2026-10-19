@@ -122,7 +122,7 @@ docker compose up --build
 ### 4. 테스트
 
 ```
-cd backend  && mvn test                 # 151 tests
+cd backend  && mvn test                 # 152 tests
 cd frontend && npm run typecheck && npm run test:security && npm run test:unit && npm run build && npm audit   # test:unit은 Node 22.18+
 ```
 
@@ -270,7 +270,7 @@ ChatGPT 등에서 나눈 과거 상담을 MentalCare로 옮기려면, 그 대화
 
 - 올리기 전에 미리보기로 섹션별 항목 수, 기억 후보 수, 경고를 보여주고, "가져오기"를 눌러야 저장됩니다.
 - 저장 결과: `kind=IMPORTED`인 완료 상담 1건(대화 없음, 원문 Markdown은 상세 화면의 "이관 원본" 탭에서 텍스트로 표시), 구조화된 요약(사용자가 말한 사실과 "AI가 관찰한 패턴"을 분리 저장), `### Memory Candidate`들은 **CANDIDATE 기억**으로 등록(Evidence에 따라 USER_STATED / AI_OBSERVED). 확정은 기억 화면에서 직접 합니다.
-- "핵심 맥락" 섹션은 이후 모든 상담의 참고 자료 블록(`<<<DATA 이관된 과거 기록>>>`)으로 전달됩니다(기본 최대 6,000자, `mentalcare.context.imported-context-max-chars`). 이관 기록은 "최근 상담 N회"에는 포함되지 않습니다.
+- "핵심 맥락" 섹션은 이후 모든 상담의 참고 자료 블록(`<<<DATA 이관된 과거 기록>>>`)으로 전달됩니다(기본 최대 15,000자, `mentalcare.context.imported-context-max-chars`). 이관 기록은 "최근 상담 N회"에는 포함되지 않습니다.
 - 가져오기는 AI를 호출하지 않으며, 파일은 2MB 이하의 `.md`/`.txt`만 받습니다. 이관 기록도 상담 상세에서 삭제할 수 있습니다.
 
 ## Safety
