@@ -45,6 +45,8 @@ mentalcare:
     max-list-items-per-summary: 5
     # Imported archives (ChatGPT export) are always in the context, capped at this many characters.
     imported-context-max-chars: 6000
+    # Character budget for the current session's messages per request; older messages are omitted first.
+    max-session-chars: 60000
   memory:
     # A CANDIDATE becomes ACTIVE automatically after this many distinct sessions observed it.
     auto-activate-user-stated: 2
@@ -79,6 +81,9 @@ openai:
   request-timeout-seconds: 120
   counseling-max-output-tokens: 2000
   utility-max-output-tokens: 4000
+  # Streamed responses: give up after this many seconds without data, or this total duration.
+  stream-idle-timeout-seconds: 90
+  stream-max-seconds: 600
   siwc:
     issuer: https://auth.openai.com
     resource: https://api.openai.com/v1

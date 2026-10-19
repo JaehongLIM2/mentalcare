@@ -21,17 +21,32 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
  * JDK HttpClient based transport. The only place in the app that talks to api.openai.com.
  * Credentials come from the active {@link BearerTokenProvider}; redirects are never followed
  * (a redirect could otherwise carry the bearer token to another host).
+ *
+ * <p>The JDK client's request timeout covers only the response headers, so streamed bodies are
+ * additionally guarded by a watchdog: no data for {@code streamIdleTimeoutSeconds}, or a total
+ * duration beyond {@code streamMaxSeconds}, closes the stream and surfaces a TIMEOUT.
  */
 @Component
 public class HttpOpenAiTransport implements OpenAiTransport {
 
     private static final Logger log = LoggerFactory.getLogger(HttpOpenAiTransport.class);
+    private static final ScheduledExecutorService WATCHDOG = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "openai-stream-watchdog");
+        t.setDaemon(true);
+        return t;
+    });
 
     private final OpenAiProperties props;
     private final ObjectMapper mapper;
@@ -95,17 +110,47 @@ public class HttpOpenAiTransport implements OpenAiTransport {
             Thread.currentThread().interrupt();
             throw new LlmException(Kind.NETWORK, "Request interrupted", e);
         }
-        try (InputStream body = response.body()) {
+
+        long idleNanos = TimeUnit.SECONDS.toNanos(props.streamIdleTimeoutSecondsOrDefault());
+        long maxNanos = TimeUnit.SECONDS.toNanos(props.streamMaxSecondsOrDefault());
+        long started = System.nanoTime();
+        AtomicLong lastRead = new AtomicLong(started);
+        AtomicReference<String> timedOut = new AtomicReference<>();
+        InputStream body = response.body();
+        ScheduledFuture<?> watchdog = WATCHDOG.scheduleAtFixedRate(() -> {
+            long now = System.nanoTime();
+            String reason = now - lastRead.get() > idleNanos ? "idle" : now - started > maxNanos ? "max-duration" : null;
+            if (reason != null && timedOut.compareAndSet(null, reason)) {
+                try {
+                    body.close(); // unblocks readLine() with an IOException
+                } catch (IOException ignored) {
+                    // already closed
+                }
+            }
+        }, 1, 1, TimeUnit.SECONDS);
+
+        try (body) {
             if (response.statusCode() / 100 != 2) {
                 throw httpError(response.statusCode(), new String(body.readAllBytes(), StandardCharsets.UTF_8));
             }
             BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8));
             String line;
             while ((line = reader.readLine()) != null) {
+                lastRead.set(System.nanoTime());
                 lineConsumer.accept(line);
             }
         } catch (IOException e) {
+            if (timedOut.get() != null) {
+                log.warn("OpenAI stream abandoned ({} timeout)", timedOut.get());
+                throw new LlmException(Kind.TIMEOUT, "Stream " + timedOut.get() + " timeout", e);
+            }
             throw new LlmException(Kind.STREAM_INTERRUPTED, "Stream interrupted: " + e.getClass().getSimpleName(), e);
+        } finally {
+            watchdog.cancel(false);
+        }
+        if (timedOut.get() != null) {
+            // the stream ended right as the watchdog fired
+            throw new LlmException(Kind.TIMEOUT, "Stream " + timedOut.get() + " timeout");
         }
     }
 

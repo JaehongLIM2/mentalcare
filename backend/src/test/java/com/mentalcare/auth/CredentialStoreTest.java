@@ -58,7 +58,11 @@ class CredentialStoreTest {
 
         assertThatThrownBy(second::load).isInstanceOfSatisfying(AuthException.class,
                 e -> assertThat(e.code()).isEqualTo(AuthException.Code.STORAGE));
+        // ...and must not be overwritten by a save from the other provider either
+        assertThatThrownBy(() -> second.save(account())).isInstanceOfSatisfying(AuthException.class,
+                e -> assertThat(e.code()).isEqualTo(AuthException.Code.STORAGE));
         assertThat(Files.readString(dir.resolve("chatgpt-auth.json"))).contains("aes-gcm-file-key");
+        assertThat(second.existingProvider()).contains("aes-gcm-file-key");
     }
 
     @Test

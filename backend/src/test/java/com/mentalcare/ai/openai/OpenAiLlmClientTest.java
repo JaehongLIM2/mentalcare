@@ -27,7 +27,7 @@ class OpenAiLlmClientTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final OpenAiProperties props = new OpenAiProperties("chatgpt", "", "https://example.invalid/v1",
-            "counsel-model", "util-model", "mod-model", "medium", "low", 5, 30, 1000, 2000, null);
+            "counsel-model", "util-model", "mod-model", "medium", "low", 5, 30, 1000, 2000, null, null, null);
 
     private FakeTransport transport;
     private OpenAiLlmClient client;

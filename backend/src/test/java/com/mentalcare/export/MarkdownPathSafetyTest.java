@@ -22,7 +22,7 @@ class MarkdownPathSafetyTest {
     void archivePathStaysInsideMarkdownDirWhateverTheContentSays() throws Exception {
         Path markdownDir = tmp.resolve("sessions");
         AppProperties props = new AppProperties(tmp.toString(), markdownDir.toString(), null, 3, 7,
-                new AppProperties.Context(30, 5, 0), new AppProperties.Memory(2, 3),
+                new AppProperties.Context(30, 5, 0, 0), new AppProperties.Memory(2, 3),
                 new AppProperties.Safety(0.4, 6, List.of()), null);
         MarkdownExporter exporter = new MarkdownExporter(props);
         String traversal = "../../../etc/passwd";

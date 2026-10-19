@@ -68,7 +68,7 @@
 | 영역 | 대응 |
 |---|---|
 | 네트워크 | `server.address=127.0.0.1` 기본. Docker는 `127.0.0.1:8080:8080` 포트 매핑. `MENTALCARE_ALLOWED_HOSTS`를 바꾸지 않는 한 LAN 접근 불가. |
-| DNS rebinding / CSRF | `LocalRequestGuardFilter`: Host가 loopback이 아니면 403, Origin이 loopback이 아니면 403, `/api/*`에 `Sec-Fetch-Site: cross-site`면 403(OAuth callback GET 제외). CORS 미설정. |
+| DNS rebinding / CSRF | `LocalRequestGuardFilter`: 경로에 매트릭스 구간(`;`)·백슬래시·인코딩된 구분자가 있으면 403(Spring이 `;…`를 떼고 라우팅하므로 원본 URI만 보던 검사의 우회 경로를 차단), Host가 loopback이 아니면 403, Origin이 loopback이 아니거나 `null`이면 403, `/api/*`에 `Sec-Fetch-Site: cross-site`면 403(OAuth callback GET 제외). CORS 미설정. |
 | 브라우저 하드닝 | CSP(`script-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'`), `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, COOP/CORP, `/api` 응답 `Cache-Control: no-store`. JSON 출력에서 `< > & '`를 `\uXXXX`로 이스케이프. |
 | XSS | React가 모든 문자열을 텍스트로 렌더링. `dangerouslySetInnerHTML`/`innerHTML`/`eval` 사용 금지(정적 검사). AI 응답과 Markdown은 HTML로 해석하지 않음(평문 `white-space: pre-wrap`). |
 | 인증 (OpenAI) | Sign in with ChatGPT: 동적 등록(`dynamic_agent_client` → issued `client_id` 저장), Authorization Code + PKCE S256, `state`(상수시간 비교, 1회용, 10분 만료), `nonce`, ID 토큰 RS256/`iss`/`aud`/`exp`/`azp` 검증(JWKS는 discovery 문서에서), granted scope에 `chatgpt.tokens.use.direct`가 없으면 추론 차단, refresh token 회전, 로그아웃 시 revoke. |
@@ -76,7 +76,11 @@
 | 과금 | API 키 fallback 없음(`openai.auth-mode`는 둘 중 하나). 플랜 한도(429 `subscription_sharing_usage_limit_exceeded`)·권한 없음·미지원 기능은 애플리케이션 오류로 사용자에게 표시하고 요청 중단. |
 | 이관 파일 | 업로드는 브라우저 파일 선택 → multipart(2MB, .md/.txt)로만 받음. 파일 경로를 서버가 읽지 않음. 내용은 텍스트로만 파싱·표시(HTML 렌더링 없음)하고, 모델에는 `<<<DATA>>>` 블록으로만 전달. AI 호출 없음. |
 | Prompt injection | 과거 기록/기억/프로필/체크인/이관 기록은 `<<<DATA … >>>` 블록 안에만 들어가고, 시스템 프롬프트(v2)가 이를 데이터로 선언. 구분자 유사 문자열은 중화. 사용자 메시지는 `user` role로만 전달. `system` role 메시지 항목은 쓰지 않음. |
-| Context 최소화 | 전체 DB/Markdown/과거 원문/파일 경로/설정/자격증명은 컨텍스트에 포함되지 않음(테스트로 고정). 최근 요약 N회(기본 3), 기억 최대 30개, 요약 필드당 5항목. |
+| Context 최소화 | 전체 DB/Markdown/과거 원문/파일 경로/설정/자격증명은 컨텍스트에 포함되지 않음(테스트로 고정). 최근 요약 N회(기본 3), 기억 최대 30개, 요약 필드당 5항목, 현재 세션 메시지 60,000자·요약 전사 150,000자·기억 목록 60개 상한(초과분은 오래된 것부터 생략하고 생략 사실을 명시). |
+| 동시성 | 세션별 잠금(`SessionLocks`): 같은 세션의 인사·응답·종료·삭제가 겹치면 BUSY/409로 거부. 두 탭·중복 클릭·응답 중 종료로 요약과 대화가 어긋나지 않음. |
+| 스트림 타임아웃 | OpenAI 스트림은 헤더 이후에도 watchdog으로 감시: 90초 무응답 또는 총 600초 초과 시 스트림을 닫고 TIMEOUT 처리. |
+| 실행 스크립트 | 시작/종료 스크립트는 **이 저장소의 jar 절대경로**를 명령줄에 가진 프로세스만 대상으로 함. 시작 절차는 저장소별 Mutex로 직렬화, PID 파일에 PID·포트·jar 경로를 기록하고 포트 응답 PID를 대조. |
+| 이관 중복 | 같은 내용(SHA-256)의 파일을 다시 가져오면 409. 이관 기억이 "반복 관찰"로 자동 확정되는 경로를 차단. |
 | 로깅 | 상담 원문·토큰·코드·URL·raw 요청/응답 본문을 로그하지 않음. 예외는 클래스명/종류/provider code만. 테스트가 센티넬 문자열로 로그 누출을 검증. |
 | 파일 시스템 | Markdown 경로 = `markdownDir/YYYY/YYYY-MM-DD[-id].md` (서버 생성). Import/업로드 기능 없음. DB는 `data-dir` 내부 고정. |
 | SQL | 모든 쿼리 `JdbcClient` named parameter 바인딩. 동적 SQL 조립 없음. enum/정규식으로 입력 검증. |
@@ -95,9 +99,9 @@
 - 잔여: 같은 PC에서 실행되는 모든 로컬 프로세스는 접근 가능. 공유 PC에서는 사용하지 말 것. (향후: 로컬 PIN/세션 토큰)
 
 ### R2. DNS rebinding / CSRF — **High → 대응됨 (잔여: Low)**
-- 공격 경로: 악성 페이지가 `attacker.com → 127.0.0.1`로 재바인딩하거나 cross-site POST 전송.
+- 공격 경로: 악성 페이지가 `attacker.com → 127.0.0.1`로 재바인딩하거나 cross-site POST 전송. 2026-10-19 외부 리뷰에서 `/api;x/health` 같은 매트릭스 경로와 `Origin: null`로 가드를 우회할 수 있음이 확인되어 같은 날 수정(경로 형태 검사 추가, null origin 거부, 회귀 테스트).
 - 영향: 상담 데이터 읽기/쓰기, 세션 종료 유발.
-- 대응: Host 화이트리스트, Origin 검사, Sec-Fetch-Site 거부, CORS 없음, JSON 전용 요청 본문.
+- 대응: 경로 형태 검사, Host 화이트리스트, Origin 검사(null 포함 거부), Sec-Fetch-Site 거부, CORS 없음, JSON 전용 요청 본문.
 - 잔여: Sec-Fetch 헤더를 보내지 않는 구형 브라우저에서 단순 요청(simple request) 한정 CSRF 가능성. JSON Content-Type 요구로 실질 영향 낮음.
 
 ### R3. OAuth 토큰 유출 — **High → 대응됨 (잔여: Medium on Linux/Docker)**

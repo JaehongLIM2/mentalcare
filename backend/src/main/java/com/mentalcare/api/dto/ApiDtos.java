@@ -33,7 +33,7 @@ public final class ApiDtos {
             @Min(1) @Max(10) Integer sleep,
             @Size(max = 2000) String note) {}
 
-    public record CreateSessionRequest(CheckInRequest checkIn) {}
+    public record CreateSessionRequest(@jakarta.validation.Valid CheckInRequest checkIn) {}
 
     public record SendMessageRequest(@NotBlank @Size(max = 20000) String content) {}
 

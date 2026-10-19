@@ -19,8 +19,12 @@ import java.util.Locale;
 /**
  * Keeps the API usable only from a browser on this machine, even though the app has no login:
  * <ul>
+ *   <li><b>Path</b> must be plain: no matrix parameters ({@code ;}), backslashes or encoded separators.
+ *       Spring strips {@code ;...} segments before routing, so a check on the raw URI alone could be
+ *       bypassed with {@code /api;x/health}; such requests are rejected outright.</li>
  *   <li><b>Host</b> must be loopback (defeats DNS rebinding: evil.com → 127.0.0.1 would carry Host: evil.com)</li>
- *   <li><b>Origin</b>, when present, must be loopback (defeats cross-site POST/PATCH from other sites)</li>
+ *   <li><b>Origin</b>, when present, must be loopback. {@code Origin: null} (sandboxed iframes, redirects)
+ *       is rejected too.</li>
  *   <li><b>Sec-Fetch-Site: cross-site</b> is rejected for /api, except the OAuth callback which is a
  *       top-level navigation back from auth.openai.com</li>
  * </ul>
@@ -43,19 +47,23 @@ public class LocalRequestGuardFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
+        String uri = request.getRequestURI();
+        if (!isPlainPath(uri)) {
+            reject(response, "path");
+            return;
+        }
         String host = hostWithoutPort(request.getHeader("Host"));
         if (host == null || !allowedHosts.contains(host)) {
             reject(response, "host");
             return;
         }
         String origin = request.getHeader("Origin");
-        if (origin != null && !"null".equals(origin) && !isAllowedOrigin(origin)) {
+        if (origin != null && !isAllowedOrigin(origin)) {
             reject(response, "origin");
             return;
         }
-        String path = request.getRequestURI();
-        boolean api = path != null && path.startsWith("/api/");
-        boolean callback = path != null && path.equals(callbackPath) && "GET".equalsIgnoreCase(request.getMethod());
+        boolean api = uri.startsWith("/api/");
+        boolean callback = uri.equals(callbackPath) && "GET".equalsIgnoreCase(request.getMethod());
         String site = request.getHeader("Sec-Fetch-Site");
         if (api && !callback && site != null && "cross-site".equalsIgnoreCase(site)) {
             reject(response, "sec-fetch-site");
@@ -64,7 +72,17 @@ public class LocalRequestGuardFilter extends OncePerRequestFilter {
         chain.doFilter(request, response);
     }
 
+    /** Only ordinary path characters: no matrix params, backslashes, encoded slashes/backslashes/NULs, or dot segments. */
+    public static boolean isPlainPath(String uri) {
+        if (uri == null || uri.isEmpty()) return false;
+        if (uri.indexOf(';') >= 0 || uri.indexOf('\\') >= 0) return false;
+        String lower = uri.toLowerCase(Locale.ROOT);
+        if (lower.contains("%2f") || lower.contains("%5c") || lower.contains("%00") || lower.contains("%2e")) return false;
+        return !lower.contains("/../") && !lower.endsWith("/..") && !lower.contains("/./");
+    }
+
     private boolean isAllowedOrigin(String origin) {
+        if ("null".equalsIgnoreCase(origin.trim())) return false;
         try {
             URI u = URI.create(origin);
             String h = u.getHost();

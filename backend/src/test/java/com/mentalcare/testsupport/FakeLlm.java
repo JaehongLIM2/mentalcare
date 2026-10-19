@@ -23,6 +23,8 @@ public class FakeLlm implements LlmClient {
     public RuntimeException summaryFailure;
     public RuntimeException streamFailure;
     public String crisisLevel = "NONE";
+    /** When set, streaming blocks until the latch opens (lets tests overlap turns). */
+    public volatile java.util.concurrent.CountDownLatch gate;
     public List<ModelInfo> models = List.of(new ModelInfo("gpt-6.1-sol", "GPT-6.1 Sol"), new ModelInfo("gpt-6-luna", "GPT-6 Luna"));
 
     public static SessionSummaryOutput defaultSummary() {
@@ -39,6 +41,7 @@ public class FakeLlm implements LlmClient {
     }
 
     public void reset() {
+        gate = null;
         contexts.clear();
         summaryTranscripts.clear();
         summaryFailure = null;
@@ -50,6 +53,10 @@ public class FakeLlm implements LlmClient {
     @Override
     public LlmUsage streamCounselingResponse(CounselingContext context, StreamHandler handler) {
         contexts.add(context);
+        java.util.concurrent.CountDownLatch g = gate;
+        if (g != null) {
+            try { g.await(10, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        }
         if (streamFailure != null) {
             handler.onDelta("부분 응답");
             throw streamFailure;

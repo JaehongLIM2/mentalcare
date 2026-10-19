@@ -120,5 +120,6 @@ CREATE TABLE IF NOT EXISTS imported_archives (
     session_id    INTEGER PRIMARY KEY REFERENCES sessions(id),
     source_name   TEXT NOT NULL,
     raw_markdown  TEXT NOT NULL,
+    content_hash  TEXT,
     imported_at   TEXT NOT NULL
 );

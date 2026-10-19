@@ -52,7 +52,8 @@ public class ChatGptAuthService {
 
     public record Status(String mode, boolean connected, boolean reauthRequired, boolean registered,
                          String email, String name, boolean planUsage, List<String> scopes, Instant expiresAt,
-                         String hostId, String credentialProvider, String credentialsDir, boolean apiKeyConfigured) {}
+                         String hostId, String credentialProvider, String credentialsDir, boolean apiKeyConfigured,
+                         String storageError) {}
 
     private record Pending(String state, String nonce, String verifier, String clientIdUsed,
                            boolean newRegistration, String returnTo, Instant createdAt) {}
@@ -65,6 +66,7 @@ public class ChatGptAuthService {
     private final ObjectMapper mapper;
     private final Map<String, Pending> pending = new ConcurrentHashMap<>();
     private volatile boolean forceRefresh = false;
+    private volatile String storageError;
 
     public ChatGptAuthService(OpenAiProperties props, OidcDiscovery discovery, OAuthTransport transport,
                               CredentialStore store, IdTokenVerifierProvider verifiers, ObjectMapper mapper) {
@@ -85,6 +87,9 @@ public class ChatGptAuthService {
     public StartResult start(String returnTo, boolean reconsent) {
         OidcDiscovery.Endpoints ep = discovery.endpoints();
         Optional<ChatGptAccount> existing = safeLoad();
+        if (storageError != null) {
+            throw new AuthException(AuthException.Code.STORAGE, "credential store unreadable: " + storageError);
+        }
         String clientId = existing.map(ChatGptAccount::clientId).filter(this::validClientId).orElse(DYNAMIC_CLIENT);
         boolean newRegistration = DYNAMIC_CLIENT.equals(clientId);
         OpenAiProperties.Siwc siwc = props.siwcOrDefault();
@@ -318,7 +323,8 @@ public class ChatGptAuthService {
                 store.hostId(),
                 store.protector().id(),
                 store.directory().toAbsolutePath().normalize().toString(),
-                props.hasApiKey());
+                props.hasApiKey(),
+                storageError);
     }
 
     /** Revokes the refresh token (best effort, 2 attempts) and clears local tokens. Registration is kept. */
@@ -402,9 +408,12 @@ public class ChatGptAuthService {
 
     private Optional<ChatGptAccount> safeLoad() {
         try {
-            return store.load();
+            Optional<ChatGptAccount> loaded = store.load();
+            storageError = null;
+            return loaded;
         } catch (AuthException e) {
             log.warn("credential store unreadable: {}", e.getMessage());
+            storageError = e.getMessage();
             return Optional.empty();
         }
     }

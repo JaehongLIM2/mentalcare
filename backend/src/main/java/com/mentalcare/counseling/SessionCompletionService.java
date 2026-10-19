@@ -45,6 +45,8 @@ public class SessionCompletionService {
 
     private static final Logger log = LoggerFactory.getLogger(SessionCompletionService.class);
     private static final int MAX_TAGS = 5;
+    static final int MAX_EXISTING_MEMORIES = 60;
+    static final int MAX_TRANSCRIPT_CHARS = 150_000;
 
     public record CompletionResult(Session session, SessionSummary summary, List<String> tags,
                                    MemoryService.IngestResult memory, String warning) {}
@@ -62,14 +64,16 @@ public class SessionCompletionService {
     private final UsageRecorder usage;
     private final TransactionTemplate tx;
     private final com.mentalcare.ai.ModelCatalogService models;
+    private final SessionLocks locks;
 
     public SessionCompletionService(SessionService sessionService, SessionRepository sessions,
                                     MessageRepository messages, CheckInRepository checkIns,
                                     SummaryRepository summaries, TagRepository tags, MemoryService memoryService,
                                     MarkdownExporter markdown, PromptLoader prompts, LlmClient llm,
                                     UsageRecorder usage, TransactionTemplate tx,
-                                    com.mentalcare.ai.ModelCatalogService models) {
+                                    com.mentalcare.ai.ModelCatalogService models, SessionLocks locks) {
         this.models = models;
+        this.locks = locks;
         this.sessionService = sessionService;
         this.sessions = sessions;
         this.messages = messages;
@@ -85,6 +89,17 @@ public class SessionCompletionService {
     }
 
     public CompletionResult complete(long sessionId) {
+        if (!locks.tryLock(sessionId)) {
+            throw new ConflictException("응답 생성이 진행 중입니다. 끝난 뒤 종료하세요.", sessionId);
+        }
+        try {
+            return doComplete(sessionId);
+        } finally {
+            locks.unlock(sessionId);
+        }
+    }
+
+    private CompletionResult doComplete(long sessionId) {
         Session session = sessionService.get(sessionId);
         if (!session.isActive()) {
             throw new ConflictException("이미 종료된 상담입니다.", sessionId);
@@ -150,6 +165,10 @@ public class SessionCompletionService {
             if (checkIn.note() != null && !checkIn.note().isBlank()) sb.append("체크인 메모: ").append(checkIn.note()).append("\n");
         }
         sb.append("\n## 기존 기억 목록 (중복 후보는 matchesExistingMemoryId로 연결)\n");
+        if (existing.size() > MAX_EXISTING_MEMORIES) {
+            existing = existing.subList(0, MAX_EXISTING_MEMORIES);
+            sb.append("(최근 ").append(MAX_EXISTING_MEMORIES).append("개만 표시)\n");
+        }
         if (existing.isEmpty()) {
             sb.append("(없음)\n");
         } else {
@@ -160,10 +179,20 @@ public class SessionCompletionService {
             }
         }
         sb.append("\n## 상담 대화 전체\n\n");
-        for (Message m : transcript) {
+        // Budget: keep the most recent messages that fit; note the omission so the model does not guess.
+        StringBuilder conv = new StringBuilder();
+        int omitted = 0;
+        for (int i = transcript.size() - 1; i >= 0; i--) {
+            Message m = transcript.get(i);
             if (m.status() == MessageStatus.FAILED || m.content().isBlank()) continue;
-            sb.append(m.role() == MessageRole.USER ? "[사용자] " : "[상담자] ").append(m.content().trim()).append("\n\n");
+            String line = (m.role() == MessageRole.USER ? "[사용자] " : "[상담자] ") + m.content().trim() + "\n\n";
+            if (conv.length() + line.length() > MAX_TRANSCRIPT_CHARS) { omitted++; continue; }
+            conv.insert(0, line);
         }
+        if (omitted > 0) {
+            sb.append("(길이 제한으로 앞부분 메시지 ").append(omitted).append("개는 생략됨)\n\n");
+        }
+        sb.append(conv);
         return sb.toString();
     }
 

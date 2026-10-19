@@ -100,6 +100,37 @@ class DataDeletionIntegrationTest {
     }
 
     @Test
+    void deletingAMiddleSessionRecountsSharedMemories() {
+        // the same memory observed in three sessions (the model links it by id each time)
+        Session a = completedSession("새 취미로 수영을 배우기 시작했다");
+        long memoryId = memories.list(Set.of(MemoryStatus.CANDIDATE, MemoryStatus.ACTIVE)).stream()
+                .filter(m -> m.content().equals("새 취미로 수영을 배우기 시작했다")).findFirst().orElseThrow().id();
+        Session b = observeAgain(memoryId);
+        Session c = observeAgain(memoryId);
+        assertThat(memories.get(memoryId).observationCount()).isEqualTo(3);
+
+        deletion.deleteSession(b.id()); // neither first nor last observation
+
+        var m = memories.get(memoryId);
+        assertThat(m.observationCount()).isEqualTo(2);
+        assertThat(m.firstObservedSessionId()).isEqualTo(a.id());
+        assertThat(m.lastObservedSessionId()).isEqualTo(c.id());
+        assertThat(memories.observations(List.of(memoryId))).hasSize(2);
+    }
+
+    private Session observeAgain(long memoryId) {
+        llm.reset();
+        Session s = sessions.start(null);
+        counseling.opening(s.id(), new Listener());
+        counseling.reply(s.id(), "또 그 이야기", new Listener());
+        llm.summary = new SessionSummaryOutput("t", List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(), List.of(),
+                List.of(new MemoryCandidateOutput("부모님께 전화하는 약속이 다시 언급됨", "USER_STATED", "goal", "r", memoryId)), List.of());
+        completion.complete(s.id());
+        return sessions.get(s.id());
+    }
+
+    @Test
     void deleteAllRequiresConfirmationAndKeepsSettings() throws Exception {
         completedSession("x");
         completedSession("y");

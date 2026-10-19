@@ -38,7 +38,7 @@ public class ArchiveImportService {
 
     public record Preview(String title, String counseledAt, String mainTopics, int factCount, int eventCount,
                           int relationshipCount, int concernCount, int aiPatternCount, int memoryCandidateCount,
-                          int coreContextChars, List<String> warnings) {}
+                          int coreContextChars, List<String> warnings, Long alreadyImportedSessionId) {}
 
     public record Result(long sessionId, String title, String date, int memoriesCreated, int memoriesMerged,
                          List<String> warnings) {}
@@ -63,16 +63,21 @@ public class ArchiveImportService {
     public Preview preview(byte[] file) {
         Parsed p = parse(file);
         Map<String, List<String>> s = p.sections();
+        Long duplicate = archives.findSessionByHash(sha256(file)).orElse(null);
         return new Preview(p.title(), p.counseledAt() == null ? p.counseledAtRaw() : p.counseledAt().toString(),
                 p.mainTopics(),
                 s.get(ArchiveMarkdownParser.FACTS).size(), s.get(ArchiveMarkdownParser.EVENTS).size(),
                 s.get(ArchiveMarkdownParser.RELATIONSHIPS).size(), s.get(ArchiveMarkdownParser.CONCERNS).size(),
                 s.get(ArchiveMarkdownParser.AI_PATTERNS).size(), p.memoryCandidates().size(),
-                p.coreContext().length(), p.warnings());
+                p.coreContext().length(), p.warnings(), duplicate);
     }
 
     public Result importArchive(String sourceName, byte[] file) {
         Parsed p = parse(file);
+        String hash = sha256(file);
+        archives.findSessionByHash(hash).ifPresent(existing -> {
+            throw new com.mentalcare.common.ConflictException("이미 가져온 파일입니다 (상담 #" + existing + "). 같은 기록을 두 번 넣으면 기억이 중복 관찰로 집계되므로 거부합니다.", existing);
+        });
         String markdown = new String(file, StandardCharsets.UTF_8);
         LocalDate date = p.counseledAt() != null ? p.counseledAt() : LocalDate.now(Dates.zone());
         Instant counseledAt = date.atTime(12, 0).atZone(Dates.zone()).toInstant();
@@ -83,14 +88,23 @@ public class ArchiveImportService {
         String safeName = sourceName == null ? "archive.md" : sourceName.replaceAll("[^\\w.\\-가-힣 ]", "_");
 
         record Persisted(Session session, MemoryService.IngestResult ingest) {}
-        Persisted persisted = tx.execute(status -> {
+        Persisted persisted;
+        try {
+            persisted = tx.execute(status -> {
             Session session = sessions.createImported(title, counseledAt);
             summaries.insert(session.id(), output, "imported", null);
             tags.replaceSessionTags(session.id(), List.of("imported"));
-            archives.insert(session.id(), limit(safeName, 200), markdown);
+            archives.insert(session.id(), limit(safeName, 200), markdown, hash);
             MemoryService.IngestResult ingest = memoryService.ingest(session.id(), candidates);
             return new Persisted(session, ingest);
-        });
+            });
+        } catch (org.springframework.dao.DataAccessException e) {
+            // two concurrent imports of the same file: the unique index on content_hash lets exactly one win.
+            // sqlite-jdbc reports this as an uncategorized SQLException (code 19), not a DataIntegrityViolation.
+            if (!isUniqueViolation(e)) throw e;
+            Long existing = archives.findSessionByHash(hash).orElse(null);
+            throw new com.mentalcare.common.ConflictException("이미 가져온 파일입니다" + (existing == null ? "" : " (상담 #" + existing + ")") + ".", existing);
+        }
         log.info("archive imported session={} candidates={} created={} merged={}", persisted.session().id(),
                 candidates.size(), persisted.ingest().created(), persisted.ingest().merged());
         return new Result(persisted.session().id(), title, date.toString(),
@@ -111,6 +125,23 @@ public class ArchiveImportService {
     public record ImportedContext(long sessionId, String date, String title, String text) {}
 
     // ------------------------------------------------------------------ mapping
+
+    private static boolean isUniqueViolation(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof org.springframework.dao.DataIntegrityViolationException) return true;
+            String m = t.getMessage();
+            if (m != null && m.contains("UNIQUE constraint failed")) return true;
+        }
+        return false;
+    }
+
+    public static String sha256(byte[] data) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(data));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
 
     private static Parsed parse(byte[] file) {
         if (file == null || file.length == 0) throw new IllegalArgumentException("파일이 비어 있습니다.");

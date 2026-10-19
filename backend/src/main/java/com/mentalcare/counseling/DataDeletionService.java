@@ -32,9 +32,11 @@ public class DataDeletionService {
     private final SessionRepository sessions;
     private final TransactionTemplate tx;
     private final Path markdownDir;
+    private final SessionLocks locks;
 
     public DataDeletionService(DataDeletionRepository repository, SessionRepository sessions, TransactionTemplate tx,
-                               AppProperties app) {
+                               AppProperties app, SessionLocks locks) {
+        this.locks = locks;
         this.repository = repository;
         this.sessions = sessions;
         this.tx = tx;
@@ -43,11 +45,18 @@ public class DataDeletionService {
 
     public Result deleteSession(long sessionId) {
         sessions.findById(sessionId).orElseThrow(() -> new NotFoundException("Session " + sessionId + " not found"));
-        List<String> paths = repository.markdownPathsOf(List.of(sessionId));
-        tx.executeWithoutResult(status -> repository.deleteSession(sessionId));
-        int[] files = deleteFiles(paths);
-        log.info("session deleted id={} files={}", sessionId, files[0]);
-        return new Result(1, files[0], files[1]);
+        if (!locks.tryLock(sessionId)) {
+            throw new com.mentalcare.common.ConflictException("응답 생성이 진행 중입니다. 끝난 뒤 삭제하세요.", sessionId);
+        }
+        try {
+            List<String> paths = repository.markdownPathsOf(List.of(sessionId));
+            tx.executeWithoutResult(status -> repository.deleteSession(sessionId));
+            int[] files = deleteFiles(paths);
+            log.info("session deleted id={} files={}", sessionId, files[0]);
+            return new Result(1, files[0], files[1]);
+        } finally {
+            locks.unlock(sessionId);
+        }
     }
 
     /** Wipes everything counseling-related. {@code confirmation} must equal "DELETE". */
@@ -55,6 +64,17 @@ public class DataDeletionService {
         if (!"DELETE".equals(confirmation)) {
             throw new IllegalArgumentException("confirmation must be \"DELETE\"");
         }
+        if (!locks.tryLockAll()) {
+            throw new com.mentalcare.common.ConflictException("진행 중인 상담 작업(응답 생성·종료)이 있습니다. 끝난 뒤 다시 시도하세요.", null);
+        }
+        try {
+            return doDeleteAll();
+        } finally {
+            locks.unlockAll();
+        }
+    }
+
+    private Result doDeleteAll() {
         long count = repository.countSessions();
         List<String> paths = repository.allMarkdownPaths();
         tx.executeWithoutResult(status -> repository.deleteAllCounselingData());

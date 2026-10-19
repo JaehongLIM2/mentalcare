@@ -62,17 +62,9 @@ public class SettingsController {
 
     @PatchMapping
     public SettingsDto update(@Valid @RequestBody UpdateSettingsRequest request) {
-        if (request.counselingReasoningEffort() != null) settings.updateReasoningEffort(blankToNull(request.counselingReasoningEffort()));
-        if (request.recentSessionCount() != null) settings.updateRecentSessionCount(request.recentSessionCount());
-        if (request.profileSummary() != null) settings.updateProfileSummary(request.profileSummary());
-        if (request.goals() != null) settings.updateGoals(request.goals());
-        if (request.counselingModel() != null) settings.updateCounselingModel(request.counselingModel());
-        if (request.utilityModel() != null) settings.updateUtilityModel(request.utilityModel());
-        if (request.welcomeShown() != null) settings.updateWelcomeShown(request.welcomeShown());
+        settings.updateAll(new SettingsService.SettingsUpdate(request.counselingReasoningEffort(),
+                request.recentSessionCount(), request.profileSummary(), request.goals(),
+                request.counselingModel(), request.utilityModel(), request.welcomeShown()));
         return get();
-    }
-
-    private static String blankToNull(String s) {
-        return s == null || s.isBlank() ? null : s.trim();
     }
 }

@@ -17,10 +17,16 @@ public class ImportedArchiveRepository {
         this.jdbc = jdbc;
     }
 
-    public void insert(long sessionId, String sourceName, String rawMarkdown) {
-        jdbc.sql("INSERT INTO imported_archives (session_id, source_name, raw_markdown, imported_at) VALUES (:sid, :name, :md, :now)")
-                .param("sid", sessionId).param("name", sourceName).param("md", rawMarkdown).param("now", now())
+    public void insert(long sessionId, String sourceName, String rawMarkdown, String contentHash) {
+        jdbc.sql("INSERT INTO imported_archives (session_id, source_name, raw_markdown, content_hash, imported_at) VALUES (:sid, :name, :md, :hash, :now)")
+                .param("sid", sessionId).param("name", sourceName).param("md", rawMarkdown).param("hash", contentHash).param("now", now())
                 .update();
+    }
+
+    /** Session that already holds an archive with this content hash, if any. */
+    public Optional<Long> findSessionByHash(String contentHash) {
+        return jdbc.sql("SELECT session_id FROM imported_archives WHERE content_hash = :hash LIMIT 1")
+                .param("hash", contentHash).query(Long.class).optional();
     }
 
     public Optional<String> rawMarkdown(long sessionId) {

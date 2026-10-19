@@ -120,7 +120,23 @@ public class CredentialStore {
         }
     }
 
+    /** Provider id recorded in the existing credential file, if one exists. */
+    public synchronized Optional<String> existingProvider() {
+        Path file = dir.resolve(AUTH_FILE);
+        if (!Files.exists(file)) return Optional.empty();
+        try {
+            return Optional.ofNullable(mapper.readTree(Files.readString(file, StandardCharsets.UTF_8)).path("provider").asText(null));
+        } catch (IOException e) {
+            return Optional.of("unreadable");
+        }
+    }
+
     public synchronized void save(ChatGptAccount account) {
+        existingProvider().filter(p -> !protector.id().equals(p)).ifPresent(p -> {
+            throw new AuthException(AuthException.Code.STORAGE,
+                    "Credential file was written by provider '" + p + "'; refusing to overwrite with '" + protector.id()
+                            + "'. Delete the file or use the original environment.");
+        });
         try {
             byte[] plaintext = mapper.writeValueAsBytes(account);
             byte[] ciphertext = protector.protect(plaintext);

@@ -84,6 +84,45 @@ class LocalGuardAndApiSecurityTest {
     }
 
     @Test
+    void pathVariantsAndNullOriginCannotBypassTheGuard() throws Exception {
+        // matrix-parameter variant: Spring would route /api;x/health to /api/health
+        mvc.perform(get("/api;x/health").header("Host", "127.0.0.1:8080").header("Origin", "null").header("Sec-Fetch-Site", "cross-site"))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api;x/sessions/1/complete").header("Host", "127.0.0.1:8080").header("Sec-Fetch-Site", "cross-site"))
+                .andExpect(status().isForbidden());
+        // Origin: null (sandboxed iframe / redirect) is not a loopback origin
+        mvc.perform(get("/api/health").header("Host", "127.0.0.1:8080").header("Origin", "null"))
+                .andExpect(status().isForbidden());
+        // encoded separators / dot segments: MockMvc decodes them before the filter runs and Tomcat
+        // rejects them with 400 on its own, so the predicate is checked directly here
+        assertThat(com.mentalcare.config.LocalRequestGuardFilter.isPlainPath("/api/%2e%2e/health")).isFalse();
+        assertThat(com.mentalcare.config.LocalRequestGuardFilter.isPlainPath("/api/../health")).isFalse();
+        assertThat(com.mentalcare.config.LocalRequestGuardFilter.isPlainPath("/api;x/health")).isFalse();
+        assertThat(com.mentalcare.config.LocalRequestGuardFilter.isPlainPath("/api/health")).isTrue();
+        // plain path still fine
+        mvc.perform(get("/api/health").header("Host", "127.0.0.1:8080")).andExpect(status().isOk());
+    }
+
+    @Test
+    void nestedCheckInIsValidatedAndSettingsUpdateIsAtomic() throws Exception {
+        String longNote = "가".repeat(3000);
+        mvc.perform(post("/api/sessions").header("Host", "127.0.0.1:8080").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"checkIn\":{\"mood\":5,\"note\":" + mapper.writeValueAsString(longNote) + "}}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.kind").value("VALIDATION"));
+
+        // a bad model name must not let the profile change slip through
+        mvc.perform(patch("/api/settings").header("Host", "127.0.0.1:8080").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"profileSummary\":\"before\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(patch("/api/settings").header("Host", "127.0.0.1:8080").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"profileSummary\":\"after\",\"counselingModel\":\"bad model name!\"}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/settings").header("Host", "127.0.0.1:8080"))
+                .andExpect(jsonPath("$.profileSummary").value("before"));
+    }
+
+    @Test
     void oauthCallbackNavigationFromOpenAiIsAllowedButStateIsChecked() throws Exception {
         mvc.perform(get("/api/auth/chatgpt/callback").param("code", "x").param("state", "forged")
                         .header("Host", "127.0.0.1:8080").header("Sec-Fetch-Site", "cross-site"))

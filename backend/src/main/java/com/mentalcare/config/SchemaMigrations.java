@@ -27,6 +27,27 @@ public class SchemaMigrations {
     @PostConstruct
     public void migrate() {
         addColumnIfMissing("sessions", "kind", "TEXT NOT NULL DEFAULT 'COUNSELING'");
+        addColumnIfMissing("imported_archives", "content_hash", "TEXT");
+        backfillArchiveHashes();
+        jdbc.sql("CREATE UNIQUE INDEX IF NOT EXISTS idx_imported_archives_hash ON imported_archives(content_hash)").update();
+    }
+
+    /** Archives imported before content hashing existed get their hash from the stored Markdown. */
+    void backfillArchiveHashes() {
+        var rows = jdbc.sql("SELECT session_id, raw_markdown FROM imported_archives WHERE content_hash IS NULL")
+                .query((rs, i) -> new Object[]{rs.getLong("session_id"), rs.getString("raw_markdown")}).list();
+        for (Object[] row : rows) {
+            String hash = com.mentalcare.importing.ArchiveImportService.sha256(
+                    ((String) row[1]).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            // a pre-existing duplicate keeps NULL on the later row so the unique index can still be created
+            boolean taken = jdbc.sql("SELECT COUNT(*) FROM imported_archives WHERE content_hash = :h").param("h", hash)
+                    .query(Long.class).single() > 0;
+            if (!taken) {
+                jdbc.sql("UPDATE imported_archives SET content_hash = :h WHERE session_id = :id")
+                        .param("h", hash).param("id", row[0]).update();
+            }
+            log.info("schema migration: hashed imported archive session={} duplicate={}", row[0], taken);
+        }
     }
 
     private void addColumnIfMissing(String table, String column, String definition) {

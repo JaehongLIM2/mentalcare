@@ -13,7 +13,7 @@ import static org.mockito.Mockito.*;
 class ModelCatalogServiceTest {
 
     private final OpenAiProperties props = new OpenAiProperties("chatgpt", "", "https://api.openai.com/v1",
-            "gpt-6.1-sol", "gpt-6-luna", "omni", "medium", "low", 5, 30, 1000, 2000, null);
+            "gpt-6.1-sol", "gpt-6-luna", "omni", "medium", "low", 5, 30, 1000, 2000, null, null, null);
 
     private BearerTokenProvider provider(boolean available) {
         BearerTokenProvider p = mock(BearerTokenProvider.class);

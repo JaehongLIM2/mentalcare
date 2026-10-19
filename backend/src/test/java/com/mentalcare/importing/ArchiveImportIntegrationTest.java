@@ -80,6 +80,12 @@ class ArchiveImportIntegrationTest {
 
         ArchiveImportService.Result r = imports.importArchive("chatgpt-export.md", sample());
 
+        // the same file again is refused (it would count as a second, independent observation)
+        assertThatThrownBy(() -> imports.importArchive("chatgpt-export.md", sample()))
+                .isInstanceOf(com.mentalcare.common.ConflictException.class);
+        assertThat(imports.preview(sample()).alreadyImportedSessionId()).isEqualTo(r.sessionId());
+        assertThat(memories.list(Set.of(MemoryStatus.ACTIVE))).isEmpty();
+
         Session s = sessions.get(r.sessionId());
         assertThat(s.kind()).isEqualTo(SessionKind.IMPORTED);
         assertThat(s.title()).startsWith("이관: 직장 스트레스");
@@ -119,6 +125,61 @@ class ArchiveImportIntegrationTest {
         assertThatThrownBy(() -> sessions.get(s.id())).hasMessageContaining("not found");
         assertThat(imports.importedContexts()).isEmpty();
         assertThat(memories.list(Set.of(MemoryStatus.CANDIDATE))).noneMatch(m -> m.content().contains("이직 여부"));
+    }
+
+    @Autowired com.mentalcare.repository.ImportedArchiveRepository archiveRepository;
+    @Autowired com.mentalcare.config.SchemaMigrations migrations;
+    @Autowired org.springframework.jdbc.core.simple.JdbcClient jdbc;
+
+    @Test
+    @org.junit.jupiter.api.Order(3)
+    void archivesImportedBeforeHashingAreBackfilledAndThenDeduplicated() throws Exception {
+        byte[] file = ("# ChatGPT 상담 이관 기록\n## Metadata\n- 상담 시점: 2025-01-01\n- 주요 주제: 옛 기록\n"
+                + "## 다음 상담 AI에게 전달할 핵심 맥락\n예전 도구에서 가져온 맥락\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        // simulate a row written by the previous version: no content hash
+        ArchiveImportService.Result r = imports.importArchive("old.md", file);
+        jdbc.sql("UPDATE imported_archives SET content_hash = NULL WHERE session_id = :id").param("id", r.sessionId()).update();
+        assertThat(imports.preview(file).alreadyImportedSessionId()).isNull(); // undetectable before the migration
+
+        migrations.migrate(); // idempotent: backfills hashes and (re)creates the unique index
+
+        assertThat(archiveRepository.findSessionByHash(ArchiveImportService.sha256(file))).contains(r.sessionId());
+        assertThat(imports.preview(file).alreadyImportedSessionId()).isEqualTo(r.sessionId());
+        assertThatThrownBy(() -> imports.importArchive("old.md", file)).isInstanceOf(com.mentalcare.common.ConflictException.class);
+        deletion.deleteSession(r.sessionId());
+    }
+
+    @Test
+    @org.junit.jupiter.api.Order(4)
+    void concurrentImportsOfTheSameFileStoreItOnce() throws Exception {
+        byte[] file = ("# ChatGPT 상담 이관 기록\n## Metadata\n- 상담 시점: 2025-02-01\n- 주요 주제: 동시 가져오기\n"
+                + "## 다음 상담 AI에게 전달할 핵심 맥락\n같은 파일을 두 탭에서\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.Callable<Object> task = () -> {
+            go.await();
+            try {
+                return imports.importArchive("same.md", file);
+            } catch (RuntimeException e) {
+                return e;
+            }
+        };
+        java.util.List<java.util.concurrent.Future<Object>> results = java.util.List.of(pool.submit(task), pool.submit(task));
+        go.countDown();
+        java.util.List<Object> outcomes = new java.util.ArrayList<>();
+        for (var f : results) outcomes.add(f.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        pool.shutdownNow();
+
+        long successes = outcomes.stream().filter(o -> o instanceof ArchiveImportService.Result).count();
+        long conflicts = outcomes.stream().filter(o -> o instanceof com.mentalcare.common.ConflictException).count();
+        assertThat(successes).isEqualTo(1);
+        assertThat(conflicts).isEqualTo(1);
+        long stored = jdbc.sql("SELECT COUNT(*) FROM imported_archives WHERE content_hash = :h")
+                .param("h", ArchiveImportService.sha256(file)).query(Long.class).single();
+        assertThat(stored).isEqualTo(1);
+        // the losing transaction rolled back completely: one IMPORTED session for this file
+        long sessionsForFile = jdbc.sql("SELECT COUNT(*) FROM sessions WHERE title = :t").param("t", "이관: 동시 가져오기").query(Long.class).single();
+        assertThat(sessionsForFile).isEqualTo(1);
     }
 
     @Test

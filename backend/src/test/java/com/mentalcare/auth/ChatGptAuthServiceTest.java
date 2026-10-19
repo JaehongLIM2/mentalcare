@@ -121,7 +121,7 @@ class ChatGptAuthServiceTest {
         OpenAiProperties props = new OpenAiProperties("chatgpt", "", "https://api.openai.com/v1",
                 "gpt-6.1-sol", "gpt-6-luna", "omni-moderation-latest", "medium", "low", 5, 30, 1000, 2000,
                 new OpenAiProperties.Siwc(ISSUER, "https://api.openai.com/v1", "mentalcare", null,
-                        "/api/auth/chatgpt/callback", "http://127.0.0.1:8080"));
+                        "/api/auth/chatgpt/callback", "http://127.0.0.1:8080"), null, null);
         store = new CredentialStore(tmp.resolve("credentials"), mapper, new AesFileKeyCredentialProtector(tmp.resolve("credentials")));
         IdTokenVerifierProvider verifiers = new IdTokenVerifierProvider() {
             @Override

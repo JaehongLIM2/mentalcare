@@ -2,6 +2,7 @@ package com.mentalcare.config;
 
 import com.mentalcare.repository.SettingsRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Set;
@@ -25,14 +26,20 @@ public class SettingsService {
     private static final Set<String> EFFORTS = Set.of("low", "medium", "high");
     private static final Pattern MODEL_SLUG = Pattern.compile("^[a-zA-Z0-9._:\\-]{1,200}$");
 
+    /** All user-editable settings in one request; null fields are left unchanged. */
+    public record SettingsUpdate(String counselingReasoningEffort, Integer recentSessionCount, String profileSummary,
+                                 String goals, String counselingModel, String utilityModel, Boolean welcomeShown) {}
+
     private final SettingsRepository repository;
     private final AppProperties app;
     private final OpenAiProperties openAi;
+    private final TransactionTemplate tx;
 
-    public SettingsService(SettingsRepository repository, AppProperties app, OpenAiProperties openAi) {
+    public SettingsService(SettingsRepository repository, AppProperties app, OpenAiProperties openAi, TransactionTemplate tx) {
         this.repository = repository;
         this.app = app;
         this.openAi = openAi;
+        this.tx = tx;
     }
 
     public String counselingReasoningEffort() {
@@ -73,38 +80,35 @@ public class SettingsService {
         return String.join("\n", resources.stream().map(r -> "- " + r).toList());
     }
 
-    public void updateReasoningEffort(String effort) {
+    /** Validates every field first, then writes all of them in one transaction (all-or-nothing). */
+    public void updateAll(SettingsUpdate u) {
+        String effort = blankToNull(u.counselingReasoningEffort());
         if (effort != null && !EFFORTS.contains(effort)) {
             throw new IllegalArgumentException("reasoning effort must be one of " + EFFORTS);
         }
-        repository.set(KEY_REASONING_EFFORT, effort);
-    }
-
-    public void updateRecentSessionCount(Integer count) {
-        if (count != null && (count < 0 || count > 10)) {
+        if (u.recentSessionCount() != null && (u.recentSessionCount() < 0 || u.recentSessionCount() > 10)) {
             throw new IllegalArgumentException("recent session count must be 0..10");
         }
-        repository.set(KEY_RECENT_COUNT, count == null ? null : String.valueOf(count));
-    }
+        String counselingModel = validSlugOrNull(u.counselingModel());
+        String utilityModel = validSlugOrNull(u.utilityModel());
 
-    public void updateProfileSummary(String profile) {
-        repository.set(KEY_PROFILE, profile == null || profile.isBlank() ? null : profile.trim());
+        tx.executeWithoutResult(status -> {
+            if (u.counselingReasoningEffort() != null) repository.set(KEY_REASONING_EFFORT, effort);
+            if (u.recentSessionCount() != null) repository.set(KEY_RECENT_COUNT, String.valueOf(u.recentSessionCount()));
+            if (u.profileSummary() != null) repository.set(KEY_PROFILE, blankToNull(u.profileSummary()));
+            if (u.goals() != null) repository.set(KEY_GOALS, blankToNull(u.goals()));
+            if (u.counselingModel() != null) repository.set(KEY_MODEL_COUNSELING, counselingModel);
+            if (u.utilityModel() != null) repository.set(KEY_MODEL_UTILITY, utilityModel);
+            if (u.welcomeShown() != null) repository.set(KEY_WELCOME_SHOWN, u.welcomeShown() ? "true" : null);
+        });
     }
 
     public void updateGoals(String goals) {
-        repository.set(KEY_GOALS, goals == null || goals.isBlank() ? null : goals.trim());
-    }
-
-    public void updateCounselingModel(String slug) {
-        repository.set(KEY_MODEL_COUNSELING, validSlugOrNull(slug));
-    }
-
-    public void updateUtilityModel(String slug) {
-        repository.set(KEY_MODEL_UTILITY, validSlugOrNull(slug));
+        updateAll(new SettingsUpdate(null, null, null, goals == null ? "" : goals, null, null, null));
     }
 
     public void updateWelcomeShown(boolean shown) {
-        repository.set(KEY_WELCOME_SHOWN, shown ? "true" : null);
+        updateAll(new SettingsUpdate(null, null, null, null, null, null, shown));
     }
 
     private static String validSlugOrNull(String slug) {
@@ -114,5 +118,9 @@ public class SettingsService {
             throw new IllegalArgumentException("model name contains unexpected characters");
         }
         return s;
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
     }
 }

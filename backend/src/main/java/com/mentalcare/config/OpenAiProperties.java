@@ -26,7 +26,9 @@ public record OpenAiProperties(
         int requestTimeoutSeconds,
         int counselingMaxOutputTokens,
         int utilityMaxOutputTokens,
-        Siwc siwc
+        Siwc siwc,
+        Integer streamIdleTimeoutSeconds,
+        Integer streamMaxSeconds
 ) {
     public enum AuthMode { CHATGPT, API_KEY }
 
@@ -55,5 +57,15 @@ public record OpenAiProperties(
 
     public Siwc siwcOrDefault() {
         return siwc == null ? new Siwc(null, null, null, null, null, null) : siwc;
+    }
+
+    /** A streamed response that sends nothing for this long is abandoned (default 90 s). */
+    public int streamIdleTimeoutSecondsOrDefault() {
+        return streamIdleTimeoutSeconds == null || streamIdleTimeoutSeconds <= 0 ? 90 : streamIdleTimeoutSeconds;
+    }
+
+    /** Hard cap on one streamed response, idle or not (default 600 s). */
+    public int streamMaxSecondsOrDefault() {
+        return streamMaxSeconds == null || streamMaxSeconds <= 0 ? 600 : streamMaxSeconds;
     }
 }

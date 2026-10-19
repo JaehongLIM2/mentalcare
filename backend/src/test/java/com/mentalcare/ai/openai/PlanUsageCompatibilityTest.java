@@ -67,7 +67,7 @@ class PlanUsageCompatibilityTest {
 
     private OpenAiLlmClient client(CapturingTransport t) {
         OpenAiProperties props = new OpenAiProperties("chatgpt", "", "https://api.openai.com/v1",
-                "gpt-6.1-sol", "gpt-6-luna", "omni-moderation-latest", "medium", "low", 5, 30, 2000, 4000, null);
+                "gpt-6.1-sol", "gpt-6-luna", "omni-moderation-latest", "medium", "low", 5, 30, 2000, 4000, null, null, null);
         return new OpenAiLlmClient(props, t, mapper);
     }
 

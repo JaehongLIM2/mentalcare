@@ -85,19 +85,32 @@ public class CounselingContextBuilder {
         appendRecentSummaries(sb, session.id());
         appendCheckIn(sb, session, checkIns.findBySession(session.id()));
 
-        List<ContextMessage> messages = new ArrayList<>();
-        for (Message m : sessionMessages) {
-            if (m.status() == MessageStatus.FAILED || m.content().isBlank()) continue;
-            switch (m.role()) {
-                case USER -> messages.add(ContextMessage.user(m.content()));
-                case ASSISTANT -> messages.add(ContextMessage.assistant(m.content()));
-            }
-        }
+        List<ContextMessage> messages = budgeted(sessionMessages, app.context().maxSessionCharsOrDefault());
         if (opening) {
             messages.add(ContextMessage.developer(prompts.load(PromptLoader.OPENING_CUE).content()));
         }
         return new CounselingContext(models.counselingModel(), sb.toString().trim(), List.copyOf(messages),
                 settings.counselingReasoningEffort());
+    }
+
+    /** Keeps the most recent messages that fit the character budget; notes the omission as a developer message. */
+    static List<ContextMessage> budgeted(List<Message> sessionMessages, int maxChars) {
+        List<ContextMessage> reversed = new ArrayList<>();
+        int used = 0, omitted = 0;
+        for (int i = sessionMessages.size() - 1; i >= 0; i--) {
+            Message m = sessionMessages.get(i);
+            if (m.status() == MessageStatus.FAILED || m.content().isBlank()) continue;
+            if (used + m.content().length() > maxChars && !reversed.isEmpty()) { omitted++; continue; }
+            used += m.content().length();
+            reversed.add(m.role() == com.mentalcare.domain.Enums.MessageRole.USER
+                    ? ContextMessage.user(m.content()) : ContextMessage.assistant(m.content()));
+        }
+        List<ContextMessage> messages = new ArrayList<>();
+        if (omitted > 0) {
+            messages.add(ContextMessage.developer("(이 상담의 앞부분 메시지 " + omitted + "개는 길이 제한으로 생략되었습니다. 생략된 내용을 추측하지 말고 필요하면 사용자에게 물어보세요.)"));
+        }
+        for (int i = reversed.size() - 1; i >= 0; i--) messages.add(reversed.get(i));
+        return messages;
     }
 
     // ------------------------------------------------------------------ sections
