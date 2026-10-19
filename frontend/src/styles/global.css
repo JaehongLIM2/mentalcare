@@ -341,3 +341,8 @@ table.plain td.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 
 .composer-meta { line-height: 1.5; }
+
+/* ---------- memory suggestions ---------- */
+.suggestions { list-style: none; margin: 8px 0 0; padding: 0; }
+.suggestions li { padding: 10px 0; border-top: 1px solid var(--border); }
+.suggestions li:first-child { border-top: none; }

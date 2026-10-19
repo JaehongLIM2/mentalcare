@@ -142,6 +142,17 @@ export interface MemoryDto {
   source?: 'SUMMARY' | 'MANUAL'
 }
 
+/** A sentence from a recent summary that could become a memory (GET /api/memories/suggestions). */
+export interface MemorySuggestion {
+  key: string
+  text: string
+  category: string
+  source: string
+  sessionId: number
+  sessionDate: string
+  sessionTitle?: string | null
+}
+
 export interface TrendPoint {
   sessionId: number
   date: string

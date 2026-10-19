@@ -132,3 +132,9 @@ CREATE TABLE IF NOT EXISTS drafts (
     rev         INTEGER NOT NULL DEFAULT 0,       -- client revision; only newer writes replace the row
     updated_at  TEXT NOT NULL
 );
+
+-- Memory suggestions the user chose not to see again (hash of the normalised sentence only, no text).
+CREATE TABLE IF NOT EXISTS memory_suggestion_dismissals (
+    key         TEXT PRIMARY KEY,
+    created_at  TEXT NOT NULL
+);

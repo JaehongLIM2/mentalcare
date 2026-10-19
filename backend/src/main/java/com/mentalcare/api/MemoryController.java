@@ -23,10 +23,27 @@ public class MemoryController {
 
     private final MemoryService memories;
     private final SessionRepository sessions;
+    private final com.mentalcare.memory.MemorySuggestionService suggestions;
 
-    public MemoryController(MemoryService memories, SessionRepository sessions) {
+    public MemoryController(MemoryService memories, SessionRepository sessions,
+                            com.mentalcare.memory.MemorySuggestionService suggestions) {
         this.memories = memories;
         this.sessions = sessions;
+        this.suggestions = suggestions;
+    }
+
+    /** Sentences from recent summaries that are not yet memories (no AI call). */
+    @GetMapping("/suggestions")
+    public List<com.mentalcare.memory.MemorySuggestionService.Suggestion> suggestions(@RequestParam(defaultValue = "12") int limit) {
+        return suggestions.suggestions(Math.min(Math.max(limit, 1), 50));
+    }
+
+    public record DismissRequest(String key) {}
+
+    @PostMapping("/suggestions/dismiss")
+    @org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
+    public void dismiss(@RequestBody DismissRequest request) {
+        suggestions.dismiss(request == null ? null : request.key());
     }
 
     /** @param status comma-separated statuses; default CANDIDATE,ACTIVE; "ALL" for everything */

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, errorMessage } from '../api/client'
-import type { MemoryDto, MemoryStatus } from '../api/types'
+import type { MemoryDto, MemoryStatus, MemorySuggestion } from '../api/types'
 import { CATEGORY_LABEL } from '../util/format'
 
 type Filter = 'REVIEW' | MemoryStatus | 'ALL'
@@ -103,6 +103,46 @@ export default function MemoryPage() {
   const [newCategory, setNewCategory] = useState('other')
   const [adding, setAdding] = useState(false)
   const [addNotice, setAddNotice] = useState<string | null>(null)
+  const [suggestions, setSuggestions] = useState<MemorySuggestion[] | null>(null)
+  const [suggestionBusy, setSuggestionBusy] = useState<string | null>(null)
+  const loadSuggestions = () => api.memorySuggestions(12).then(setSuggestions).catch(() => setSuggestions([]))
+  useEffect(() => {
+    void loadSuggestions()
+  }, [])
+
+  const useSuggestion = (s: MemorySuggestion) => {
+    setNewContent(s.text)
+    setNewCategory(s.category in CATEGORY_LABEL ? s.category : 'other')
+    setAddNotice(null)
+  }
+
+  const addSuggestion = async (s: MemorySuggestion) => {
+    setSuggestionBusy(s.key)
+    setError(null)
+    try {
+      const created = await api.createMemory(s.text, s.category in CATEGORY_LABEL ? s.category : 'other')
+      setAddNotice('추천 문장을 확정된 기억으로 추가했습니다.')
+      if (filter === 'REVIEW' || filter === 'ACTIVE' || filter === 'ALL') setItems((prev) => (prev ? [created, ...prev] : [created]))
+      await loadSuggestions()
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setSuggestionBusy(null)
+    }
+  }
+
+  const dismissSuggestion = async (s: MemorySuggestion) => {
+    setSuggestionBusy(s.key)
+    try {
+      await api.dismissMemorySuggestion(s.key)
+      setSuggestions((prev) => (prev ? prev.filter((x) => x.key !== s.key) : prev))
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setSuggestionBusy(null)
+    }
+  }
+
   const addMemory = async () => {
     if (!newContent.trim()) return
     setAdding(true)
@@ -113,6 +153,7 @@ export default function MemoryPage() {
       setNewContent('')
       setAddNotice('확정된 기억으로 추가했습니다. 다음 답변부터 상담자가 참고합니다.')
       if (filter === 'REVIEW' || filter === 'ACTIVE' || filter === 'ALL') setItems((prev) => (prev ? [created, ...prev] : [created]))
+      void loadSuggestions()
     } catch (e) {
       setError(errorMessage(e))
     } finally {
@@ -153,6 +194,34 @@ export default function MemoryPage() {
           </button>
           {addNotice && <span className="muted small">{addNotice}</span>}
         </div>
+
+        <h3 style={{ marginTop: 16 }}>최근 상담에서 추천</h3>
+        <p className="muted small" style={{ marginTop: 0 }}>
+          최근 상담 요약 중 직접 이야기한 사건과 생각에서, 아직 기억에 없는 문장을 골랐습니다. AI를 새로 호출하지 않고 이 PC의 기록에서만 가져옵니다.
+        </p>
+        {suggestions === null && <div className="muted small">불러오는 중…</div>}
+        {suggestions !== null && suggestions.length === 0 && (
+          <div className="muted small">추천할 문장이 없습니다. 상담을 마치면 새 추천이 생깁니다.</div>
+        )}
+        {suggestions !== null && suggestions.length > 0 && (
+          <ul className="suggestions">
+            {suggestions.map((s) => (
+              <li key={s.key}>
+                <div>{s.text}</div>
+                <div className="spread" style={{ marginTop: 4 }}>
+                  <span className="muted small">
+                    <Link to={`/history/${s.sessionId}`}>{s.sessionDate}{s.sessionTitle ? ` · ${s.sessionTitle}` : ''}</Link> · {s.source}
+                  </span>
+                  <span className="row" style={{ gap: 6 }}>
+                    <button className="btn sm primary" onClick={() => addSuggestion(s)} disabled={suggestionBusy !== null}>바로 추가</button>
+                    <button className="btn sm" onClick={() => useSuggestion(s)} disabled={suggestionBusy !== null}>고쳐서 추가</button>
+                    <button className="btn sm" onClick={() => dismissSuggestion(s)} disabled={suggestionBusy !== null}>추천 안 받기</button>
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="tabs">

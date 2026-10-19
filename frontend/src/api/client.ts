@@ -9,6 +9,7 @@ import type {
   ErrorDto,
   HomeView,
   MemoryDto,
+  MemorySuggestion,
   MemoryStatus,
   ModelCatalog,
   RestoreResult,
@@ -116,6 +117,8 @@ export const api = {
     const q = status === undefined ? '' : status === 'ALL' ? '?status=ALL' : `?status=${status.join(',')}`
     return request<MemoryDto[]>('GET', `/api/memories${q}`)
   },
+  memorySuggestions: (limit = 12) => request<MemorySuggestion[]>('GET', `/api/memories/suggestions?limit=${limit}`),
+  dismissMemorySuggestion: (key: string) => request<void>('POST', '/api/memories/suggestions/dismiss', { key }),
   createMemory: (content: string, category: string) =>
     request<MemoryDto>('POST', '/api/memories', { content, category }),
   updateMemory: (id: number, patch: { content?: string; category?: string; status?: MemoryStatus }) =>

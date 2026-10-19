@@ -190,7 +190,7 @@ public class MemoryService {
         return bestScore >= 0.72 ? Optional.ofNullable(best) : Optional.empty();
     }
 
-    static String normalize(String s) {
+    public static String normalize(String s) {
         return s == null ? "" : s.toLowerCase().replaceAll("[\\s\\p{Punct}]+", "");
     }
 
