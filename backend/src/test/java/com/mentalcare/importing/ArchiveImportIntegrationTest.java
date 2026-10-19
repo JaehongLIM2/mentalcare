@@ -150,6 +150,32 @@ class ArchiveImportIntegrationTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Order(5)
+    void migrationSurvivesPreExistingDuplicateHashes() throws Exception {
+        byte[] file = ("# ChatGPT 상담 이관 기록\n## Metadata\n- 상담 시점: 2025-03-01\n- 주요 주제: 중복 해시\n"
+                + "## 다음 상담 AI에게 전달할 핵심 맥락\n옛 버전에서 두 번 들어간 파일\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String hash = ArchiveImportService.sha256(file);
+        ArchiveImportService.Result first = imports.importArchive("dup.md", file);
+        // simulate the pre-index version: a second row with the same hash
+        jdbc.sql("DROP INDEX IF EXISTS idx_imported_archives_hash").update();
+        long secondId = jdbc.sql("INSERT INTO sessions (status, kind, title, started_at, ended_at, crisis_flag, created_at, updated_at) "
+                + "VALUES ('COMPLETED','IMPORTED','이관: 중복 해시', :t, :t, 0, :t, :t) RETURNING id")
+                .param("t", java.time.Instant.now().toString()).query(Long.class).single();
+        jdbc.sql("INSERT INTO imported_archives (session_id, source_name, raw_markdown, content_hash, imported_at) VALUES (:s, 'dup.md', :md, :h, :t)")
+                .param("s", secondId).param("md", new String(file, java.nio.charset.StandardCharsets.UTF_8)).param("h", hash)
+                .param("t", java.time.Instant.now().toString()).update();
+
+        migrations.migrate(); // must not throw: later duplicate loses its hash, index is recreated
+
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM imported_archives WHERE content_hash = :h").param("h", hash).query(Long.class).single()).isEqualTo(1);
+        assertThat(archiveRepository.findSessionByHash(hash)).contains(first.sessionId());
+        assertThat(sessions.get(secondId)).isNotNull(); // data preserved
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_imported_archives_hash'").query(Long.class).single()).isEqualTo(1);
+        deletion.deleteSession(secondId);
+        deletion.deleteSession(first.sessionId());
+    }
+
+    @Test
     @org.junit.jupiter.api.Order(4)
     void concurrentImportsOfTheSameFileStoreItOnce() throws Exception {
         byte[] file = ("# ChatGPT 상담 이관 기록\n## Metadata\n- 상담 시점: 2025-02-01\n- 주요 주제: 동시 가져오기\n"

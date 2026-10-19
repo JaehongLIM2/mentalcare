@@ -118,7 +118,7 @@ docker compose up --build
 ### 4. 테스트
 
 ```
-cd backend  && mvn test                 # 92 tests
+cd backend  && mvn test                 # 93 tests
 cd frontend && npm run typecheck && npm run test:security && npm run build && npm audit
 ```
 

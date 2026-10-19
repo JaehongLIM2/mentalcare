@@ -49,9 +49,12 @@ public class ArchiveImportService {
     private final ImportedArchiveRepository archives;
     private final MemoryService memoryService;
     private final TransactionTemplate tx;
+    private final com.mentalcare.counseling.SessionLocks locks;
 
     public ArchiveImportService(SessionRepository sessions, SummaryRepository summaries, TagRepository tags,
-                                ImportedArchiveRepository archives, MemoryService memoryService, TransactionTemplate tx) {
+                                ImportedArchiveRepository archives, MemoryService memoryService, TransactionTemplate tx,
+                                com.mentalcare.counseling.SessionLocks locks) {
+        this.locks = locks;
         this.sessions = sessions;
         this.summaries = summaries;
         this.tags = tags;
@@ -89,6 +92,9 @@ public class ArchiveImportService {
 
         record Persisted(Session session, MemoryService.IngestResult ingest) {}
         Persisted persisted;
+        if (!locks.tryLockGlobalRead()) {
+            throw new com.mentalcare.common.ConflictException("데이터 삭제가 진행 중입니다. 잠시 후 다시 시도하세요.", null);
+        }
         try {
             persisted = tx.execute(status -> {
             Session session = sessions.createImported(title, counseledAt);
@@ -104,6 +110,8 @@ public class ArchiveImportService {
             if (!isUniqueViolation(e)) throw e;
             Long existing = archives.findSessionByHash(hash).orElse(null);
             throw new com.mentalcare.common.ConflictException("이미 가져온 파일입니다" + (existing == null ? "" : " (상담 #" + existing + ")") + ".", existing);
+        } finally {
+            locks.unlockGlobalRead();
         }
         log.info("archive imported session={} candidates={} created={} merged={}", persisted.session().id(),
                 candidates.size(), persisted.ingest().created(), persisted.ingest().merged());

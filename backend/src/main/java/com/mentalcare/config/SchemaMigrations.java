@@ -29,7 +29,25 @@ public class SchemaMigrations {
         addColumnIfMissing("sessions", "kind", "TEXT NOT NULL DEFAULT 'COUNSELING'");
         addColumnIfMissing("imported_archives", "content_hash", "TEXT");
         backfillArchiveHashes();
+        neutraliseDuplicateArchiveHashes();
         jdbc.sql("CREATE UNIQUE INDEX IF NOT EXISTS idx_imported_archives_hash ON imported_archives(content_hash)").update();
+    }
+
+    /**
+     * Rows that already share a hash (possible with the pre-index version under concurrent imports) keep
+     * their data; only the later rows lose the hash so the unique index can exist. They stay visible as
+     * sessions and can be deleted by the user like any other.
+     */
+    void neutraliseDuplicateArchiveHashes() {
+        int cleared = jdbc.sql("""
+                UPDATE imported_archives SET content_hash = NULL
+                WHERE content_hash IS NOT NULL
+                  AND session_id NOT IN (SELECT MIN(session_id) FROM imported_archives
+                                         WHERE content_hash IS NOT NULL GROUP BY content_hash)
+                """).update();
+        if (cleared > 0) {
+            log.warn("schema migration: {} duplicate imported archive(s) kept without hash", cleared);
+        }
     }
 
     /** Archives imported before content hashing existed get their hash from the stored Markdown. */

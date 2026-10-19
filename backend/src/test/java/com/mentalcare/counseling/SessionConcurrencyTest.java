@@ -99,6 +99,10 @@ class SessionConcurrencyTest {
             counseling.opening(s.id(), l);
             assertThat(l.errorKinds).containsExactly("BUSY");
             assertThatThrownBy(() -> completion.complete(s.id())).isInstanceOf(ConflictException.class);
+            // creating a new session and importing an archive participate in the global lock too
+            assertThatThrownBy(() -> sessions.start(null)).isInstanceOf(ConflictException.class);
+            assertThatThrownBy(() -> imports.importArchive("x.md", "# ChatGPT 상담 이관 기록\n## 다음 상담 AI에게 전달할 핵심 맥락\nx\n".getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                    .isInstanceOf(ConflictException.class);
         } finally {
             locks.unlockAll();
         }
@@ -107,6 +111,7 @@ class SessionConcurrencyTest {
     }
 
     @Autowired SessionLocks locks;
+    @Autowired com.mentalcare.importing.ArchiveImportService imports;
 
     @Test
     void completionAndDeletionAreRefusedWhileAReplyIsStreaming() throws Exception {

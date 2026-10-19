@@ -48,6 +48,18 @@ public class SessionLocks {
         }
     }
 
+    /**
+     * Participation in the global lock for work that creates sessions without owning one yet
+     * (new session, archive import). Hold it until the transaction has committed.
+     */
+    public boolean tryLockGlobalRead() {
+        return !global.isWriteLocked() && global.readLock().tryLock();
+    }
+
+    public void unlockGlobalRead() {
+        global.readLock().unlock();
+    }
+
     /** Acquires the global maintenance lock; false while any session work is running. */
     public boolean tryLockAll() {
         return global.writeLock().tryLock();

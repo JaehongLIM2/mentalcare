@@ -15,7 +15,7 @@ import com.mentalcare.repository.SessionRepository;
 import com.mentalcare.repository.SummaryRepository;
 import com.mentalcare.repository.TagRepository;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Map;
@@ -46,11 +46,16 @@ public class SessionService {
     private final PromptVersionRepository promptVersions;
     private final PromptLoader prompts;
     private final com.mentalcare.repository.ImportedArchiveRepository archives;
+    private final SessionLocks locks;
+    private final TransactionTemplate tx;
 
     public SessionService(SessionRepository sessions, MessageRepository messages, CheckInRepository checkIns,
                           SummaryRepository summaries, TagRepository tags, PromptVersionRepository promptVersions,
-                          PromptLoader prompts, com.mentalcare.repository.ImportedArchiveRepository archives) {
+                          PromptLoader prompts, com.mentalcare.repository.ImportedArchiveRepository archives,
+                          SessionLocks locks, TransactionTemplate tx) {
         this.archives = archives;
+        this.locks = locks;
+        this.tx = tx;
         this.sessions = sessions;
         this.messages = messages;
         this.checkIns = checkIns;
@@ -60,20 +65,29 @@ public class SessionService {
         this.prompts = prompts;
     }
 
-    @Transactional
+    /** Creates a session inside the global lock so a delete-all cannot run between create and commit. */
     public Session start(CheckInInput checkIn) {
-        Optional<Session> active = sessions.findActive();
-        if (active.isPresent()) {
-            throw new ConflictException("진행 중인 상담이 있습니다. 먼저 이어서 진행하거나 종료하세요.", active.get().id());
-        }
         validate(checkIn);
-        long promptVersionId = prompts.load(PromptLoader.COUNSELOR_SYSTEM).versionId();
-        Session session = sessions.create(promptVersionId);
-        if (checkIn != null && !checkIn.isEmpty()) {
-            checkIns.insert(session.id(), checkIn.mood(), checkIn.stress(), checkIn.anxiety(),
-                    checkIn.energy(), checkIn.sleep(), blankToNull(checkIn.note()));
+        if (!locks.tryLockGlobalRead()) {
+            throw new ConflictException("데이터 삭제가 진행 중입니다. 잠시 후 다시 시도하세요.", null);
         }
-        return session;
+        try {
+            return tx.execute(status -> {
+                Optional<Session> active = sessions.findActive();
+                if (active.isPresent()) {
+                    throw new ConflictException("진행 중인 상담이 있습니다. 먼저 이어서 진행하거나 종료하세요.", active.get().id());
+                }
+                long promptVersionId = prompts.load(PromptLoader.COUNSELOR_SYSTEM).versionId();
+                Session session = sessions.create(promptVersionId);
+                if (checkIn != null && !checkIn.isEmpty()) {
+                    checkIns.insert(session.id(), checkIn.mood(), checkIn.stress(), checkIn.anxiety(),
+                            checkIn.energy(), checkIn.sleep(), blankToNull(checkIn.note()));
+                }
+                return session;
+            });
+        } finally {
+            locks.unlockGlobalRead();
+        }
     }
 
     public Optional<Session> active() {
