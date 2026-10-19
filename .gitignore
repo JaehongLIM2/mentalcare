@@ -25,3 +25,6 @@ Thumbs.db
 
 # --- background launcher runtime (PID + log) ---
 .run/
+
+# --- TypeScript incremental build state ---
+*.tsbuildinfo
