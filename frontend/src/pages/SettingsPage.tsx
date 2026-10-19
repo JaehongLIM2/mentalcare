@@ -13,7 +13,7 @@ import type {
 import ChatGptConnect from '../components/ChatGptConnect'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import ConfirmModal from '../components/ConfirmModal'
-import { SHUTDOWN_EVENT } from '../components/ServerStatus'
+import QuitAppButton from '../components/QuitAppButton'
 import { fmtDateTime } from '../util/format'
 
 function fmtUptime(seconds: number): string {
@@ -60,9 +60,6 @@ export default function SettingsPage() {
 
   // app status & quit
   const [system, setSystem] = useState<SystemStatus | null>(null)
-  const [confirmQuit, setConfirmQuit] = useState(false)
-  const [quitting, setQuitting] = useState(false)
-  const [stopped, setStopped] = useState(false)
 
   const apply = (s: SettingsDto) => {
     setSettings(s)
@@ -214,36 +211,6 @@ export default function SettingsPage() {
     } finally {
       setRestoring(false)
     }
-  }
-
-  const quit = async () => {
-    setQuitting(true)
-    setError(null)
-    try {
-      await api.system.shutdown()
-      setStopped(true)
-      setConfirmQuit(false)
-      window.dispatchEvent(new Event(SHUTDOWN_EVENT))
-    } catch (e) {
-      setError(errorMessage(e))
-      setConfirmQuit(false)
-    } finally {
-      setQuitting(false)
-    }
-  }
-
-  if (stopped) {
-    return (
-      <div className="card overlay-note">
-        <h1>앱이 종료되었습니다</h1>
-        <p className="muted">
-          서버가 정상적으로 멈췄고 상담 데이터는 모두 저장되어 있습니다. 이 브라우저 탭은 닫아도 됩니다.
-        </p>
-        <p className="muted small">
-          다시 사용하려면 <b>MentalCare 시작.cmd</b>(Windows) 또는 <code>docker compose up</code>으로 실행하세요.
-        </p>
-      </div>
-    )
   }
 
   if (error && !settings) return <div className="alert error">{error}</div>
@@ -471,29 +438,10 @@ export default function SettingsPage() {
         ) : (
           <div className="muted small">상태를 가져오지 못했습니다.</div>
         )}
-        <button className="btn danger" onClick={() => setConfirmQuit(true)} disabled={!system} style={{ marginTop: 10 }}>
-          앱 종료
-        </button>
+        <div style={{ marginTop: 10 }}>
+          <QuitAppButton />
+        </div>
       </div>
-
-      {confirmQuit && (
-        <ConfirmModal
-          title="앱을 종료할까요?"
-          confirmLabel="종료"
-          busyLabel="종료하는 중…"
-          busy={quitting}
-          disabled={(system?.busySessions ?? 0) > 0}
-          onCancel={() => setConfirmQuit(false)}
-          onConfirm={quit}
-        >
-          <p>서버가 멈추고 이 화면은 더 이상 동작하지 않습니다. 저장된 상담 데이터는 그대로 남습니다.</p>
-          {(system?.busySessions ?? 0) > 0 ? (
-            <p style={{ color: 'var(--danger)' }}>답변 생성이 진행 중입니다. 끝난 뒤 종료하세요.</p>
-          ) : (
-            <p className="muted">다시 시작하려면 MentalCare 시작.cmd 또는 docker compose up 을 실행하세요.</p>
-          )}
-        </ConfirmModal>
-      )}
 
       <div className="card soft">
         <h2>구성 (읽기 전용)</h2>
