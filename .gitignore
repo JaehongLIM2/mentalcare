@@ -28,3 +28,6 @@ Thumbs.db
 
 # --- TypeScript incremental build state ---
 *.tsbuildinfo
+
+# --- personal drafts (not part of the project) ---
+docs/blog-draft.md
