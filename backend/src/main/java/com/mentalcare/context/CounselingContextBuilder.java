@@ -277,6 +277,7 @@ public class CounselingContextBuilder {
         StringBuilder body = new StringBuilder();
         body.append("## 이번 상담\n");
         body.append("날짜: ").append(Dates.isoDate(session.startedAt())).append("\n");
+        body.append("지난 상담과의 간격: ").append(gapDescription(session)).append("\n");
         if (checkIn.isEmpty() || checkIn.get().isEmpty()) {
             body.append("체크인: 건너뜀\n");
         } else {
@@ -291,6 +292,27 @@ public class CounselingContextBuilder {
             if (c.note() != null && !c.note().isBlank()) body.append("체크인 메모: ").append(c.note().trim()).append("\n");
         }
         block(sb, "이번 상담", body.toString());
+    }
+
+    /** "2026-10-19 (같은 날, 0일 전)" for the most recent earlier session; "이전 상담 없음" for the first one. */
+    String gapDescription(Session current) {
+        java.time.LocalDate today = Dates.localDate(current.startedAt());
+        return sessions.findRecentCompleted(2).stream()
+                .filter(s -> s.id() != current.id())
+                .findFirst()
+                .map(prev -> {
+                    java.time.LocalDate last = Dates.localDate(prev.startedAt());
+                    long days = java.time.temporal.ChronoUnit.DAYS.between(last, today);
+                    return Dates.isoDate(prev.startedAt()) + " (" + gapPhrase(days) + ")";
+                })
+                .orElse("이전 상담 없음 (첫 상담)");
+    }
+
+    static String gapPhrase(long days) {
+        if (days <= 0) return "같은 날, 0일 전";
+        if (days <= 3) return days + "일 전, 며칠 사이";
+        if (days <= 10) return days + "일 전, 약 한 주";
+        return days + "일 전, 오랜만";
     }
 
     private void appendSafety(StringBuilder sb, SafetyMode mode) {

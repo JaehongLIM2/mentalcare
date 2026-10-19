@@ -154,6 +154,33 @@ class ManualMemoryIntegrationTest {
     }
 
     @Test
+    void openingKnowsHowLongAgoTheLastSessionWasInsteadOfAssumingAWeek() {
+        Session first = sessions.start(null);
+        counseling.opening(first.id(), new Listener());
+        completion.complete(first.id());
+        llm.reset();
+
+        Session sameDay = sessions.start(null);
+        counseling.opening(sameDay.id(), new Listener());
+
+        String today = com.mentalcare.common.Dates.isoDate(first.startedAt());
+        var ctx = llm.contexts.get(0);
+        assertThat(ctx.instructions()).contains("지난 상담과의 간격: " + today + " (같은 날, 0일 전)");
+        String cue = ctx.messages().get(ctx.messages().size() - 1).content();
+        assertThat(cue).contains("지난 상담과의 간격").contains("같은 날(0일)").contains("습관적으로 쓰지 않습니다");
+        assertThat(prompts.load(PromptLoader.OPENING_CUE).version()).isEqualTo("v2");
+        completion.complete(sameDay.id());
+    }
+
+    @Test
+    void gapPhrasesFollowTheNumberOfDays() {
+        assertThat(com.mentalcare.context.CounselingContextBuilderAccess.gapPhrase(0)).isEqualTo("같은 날, 0일 전");
+        assertThat(com.mentalcare.context.CounselingContextBuilderAccess.gapPhrase(2)).isEqualTo("2일 전, 며칠 사이");
+        assertThat(com.mentalcare.context.CounselingContextBuilderAccess.gapPhrase(7)).isEqualTo("7일 전, 약 한 주");
+        assertThat(com.mentalcare.context.CounselingContextBuilderAccess.gapPhrase(30)).isEqualTo("30일 전, 오랜만");
+    }
+
+    @Test
     void summaryPromptV2AsksForLastingPeoplePetsAndOpenMatters() {
         PromptLoader.LoadedPrompt p = prompts.load(PromptLoader.SESSION_SUMMARY);
         assertThat(p.version()).isEqualTo("v2");
