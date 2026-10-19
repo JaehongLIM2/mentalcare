@@ -121,8 +121,8 @@ docker compose up --build
 ### 4. 테스트
 
 ```
-cd backend  && mvn test                 # 109 tests
-cd frontend && npm run typecheck && npm run test:security && npm run build && npm audit
+cd backend  && mvn test                 # 117 tests
+cd frontend && npm run typecheck && npm run test:security && npm run test:unit && npm run build && npm audit
 ```
 
 OpenAI 호출은 `LlmClient` 인터페이스 뒤에 있으므로 테스트는 네트워크 없이 Fake/Mock으로 실행됩니다.
@@ -200,7 +200,8 @@ open-source/self-hosted 흐름을 Java로 구현했습니다. 공식 SDK(`@siwc/
 | 파일 구성 | `manifest.json`(형식·버전·시각·건수), `mentalcare.db`(`VACUUM INTO`로 만든 일관된 스냅샷: 대화·요약·기억·설정 포함), `sessions/**/*.md` |
 | 자격증명 | 기본 **제외**. 체크하면 `credentials/`에 암호화된 파일 그대로 포함(DPAPI는 같은 Windows 사용자에서만 복호화 가능). 평문 토큰은 어디에도 없음 |
 | 복원 절차 | 업로드 → 검사(`POST /api/backup/inspect`: manifest, zip 경로 안전성, `PRAGMA integrity_check`, 필수 테이블) → 확인 모달 → `POST /api/backup/restore` (`confirmation=RESTORE`) |
-| 복원 방식 | 전역 잠금 아래에서 **복원 전 스냅샷**을 `data/backups/before-restore-*.zip`으로 먼저 저장(최근 5개 보관) → 테이블을 트랜잭션 안에서 행 단위로 교체(DB 파일 교체 없음) → Markdown 폴더 교체 → 요약의 Markdown 경로를 이 PC 기준으로 재연결 |
+| 복원 방식 | 전역 잠금 아래에서 **복원 전 스냅샷**을 `data/backups/before-restore-*.zip`으로 먼저 저장(최근 5개 보관) → 새 Markdown 폴더를 옆에 미리 준비 → 한 트랜잭션 안에서 테이블 행 교체 + Markdown 경로 재연결 + 폴더 이름 바꾸기(swap). 어느 단계든 실패하면 DB는 롤백되고 폴더도 원래대로 돌아갑니다. 이전 폴더는 커밋 성공 후에만 지웁니다 |
+| 전체 삭제와의 관계 | 복원 전 스냅샷에는 상담 원문이 들어 있으므로, 설정의 **모든 상담 데이터 삭제**는 기본으로 스냅샷도 함께 지웁니다(체크 해제 가능, 남은 개수 표시). 직접 내려받아 다른 곳에 둔 백업은 앱이 지우지 않습니다 |
 | 거부되는 경우 | 응답 생성·종료·가져오기 진행 중(409), 손상된 zip/DB, `..`·절대경로 항목, 더 새로운 형식 버전 |
 
 `data/` 폴더를 통째로 복사해 두는 방식도 여전히 유효합니다(암호화된 토큰과 키 파일이 함께 포함되니 안전하게 보관).

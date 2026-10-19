@@ -118,14 +118,21 @@ public class SessionService {
 
     /** Stores the composer text of an active session; blank text removes the draft. */
     public void saveDraft(long id, String content) {
-        Session session = get(id);
-        if (!session.isActive()) {
-            throw new ConflictException("종료된 상담에는 초안을 저장할 수 없습니다.", id);
+        if (!locks.tryLockGlobalRead()) {
+            throw new ConflictException("데이터 삭제·복원 또는 종료가 진행 중이라 초안을 저장하지 못했습니다.", id);
         }
-        if (content == null || content.isBlank()) {
-            drafts.delete(id);
-        } else {
-            drafts.save(id, content);
+        try {
+            if (content == null || content.isBlank()) {
+                get(id);
+                drafts.delete(id);
+                return;
+            }
+            if (drafts.saveIfActive(id, content) == 0) {
+                Session session = get(id); // NotFound when it is gone
+                throw new ConflictException("종료된 상담에는 초안을 저장할 수 없습니다.", session.id());
+            }
+        } finally {
+            locks.unlockGlobalRead();
         }
     }
 

@@ -86,8 +86,13 @@ public class SystemController {
     @PostMapping("/api/system/shutdown")
     public Map<String, String> shutdown(@RequestBody(required = false) String body) {
         // read as text: the stop script posts an empty body with a form content type, which must keep working
-        if (wantsIdleOnly(body, mapper) && locks.busyCount() > 0) {
-            throw new ConflictException("응답 생성이나 데이터 작업이 진행 중입니다. 끝난 뒤 종료하세요.", null);
+        if (wantsIdleOnly(body, mapper)) {
+            // exclusive with every kind of work, and no new work is admitted afterwards
+            if (!locks.closeIfIdle()) {
+                throw new ConflictException("응답 생성이나 데이터 작업이 진행 중입니다. 끝난 뒤 종료하세요.", null);
+            }
+        } else {
+            locks.close();
         }
         log.info("shutdown requested via /api/system/shutdown");
         Thread t = new Thread(() -> {

@@ -94,6 +94,30 @@ class DraftAndRetryIntegrationTest {
         assertThatThrownBy(() -> sessions.saveDraft(s.id(), "x")).isInstanceOf(ConflictException.class);
     }
 
+    @Autowired SessionLocks locks;
+
+    @Test
+    void draftSavesTakePartInTheMaintenanceLock() {
+        Session s = sessions.start(null);
+        assertThat(locks.tryLockAll()).isTrue(); // a restore / delete-all in another tab
+        try {
+            assertThatThrownBy(() -> sessions.saveDraft(s.id(), "복원 중에 들어온 자동 저장")).isInstanceOf(ConflictException.class);
+        } finally {
+            locks.unlockAll();
+        }
+        assertThat(sessions.detail(s.id()).draft()).isNull();
+        // a draft can be saved while a reply is streaming (only the session lock is busy then)
+        assertThat(locks.tryLock(s.id())).isTrue();
+        try {
+            sessions.saveDraft(s.id(), "응답을 기다리며 쓰는 글");
+        } finally {
+            locks.unlock(s.id());
+        }
+        assertThat(sessions.detail(s.id()).draft().content()).isEqualTo("응답을 기다리며 쓰는 글");
+        assertThat(locks.busyCount()).isZero(); // the read lock was released after each save
+        assertThatThrownBy(() -> sessions.saveDraft(999_999L, "x")).isInstanceOf(com.mentalcare.common.NotFoundException.class);
+    }
+
     @Test
     void retryAfterAnInterruptedReplyReusesTheSavedUserMessage() {
         Session s = sessions.start(null);

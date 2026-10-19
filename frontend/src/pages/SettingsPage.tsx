@@ -39,6 +39,7 @@ export default function SettingsPage() {
   const [confirmWipe, setConfirmWipe] = useState(false)
   const [wiping, setWiping] = useState(false)
   const [wipeResult, setWipeResult] = useState<DeletionResult | null>(null)
+  const [wipeSnapshots, setWipeSnapshots] = useState(true)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
@@ -134,7 +135,7 @@ export default function SettingsPage() {
     setWiping(true)
     setError(null)
     try {
-      setWipeResult(await api.deleteAllData())
+      setWipeResult(await api.deleteAllData(wipeSnapshots))
       setConfirmWipe(false)
       loadAll(false)
     } catch (e) {
@@ -343,7 +344,7 @@ export default function SettingsPage() {
                 {settings.lastBackupAt ? fmtDateTime(settings.lastBackupAt) : <span style={{ color: 'var(--warn)' }}>아직 백업한 적이 없습니다</span>}
               </td>
             </tr>
-            <tr><th>복원 전 자동 스냅샷</th><td><code>{settings.backupsDir}</code> (최근 5개 보관)</td></tr>
+            <tr><th>복원 전 자동 스냅샷</th><td>{settings.restoreSnapshots}개 · <code>{settings.backupsDir}</code> (최근 5개 보관, 상담 원문 포함)</td></tr>
           </tbody>
         </table>
         <div className="row" style={{ marginTop: 10 }}>
@@ -541,7 +542,14 @@ export default function SettingsPage() {
         {wipeResult && (
           <div className="alert info">
             상담 {wipeResult.sessionsDeleted}건과 Markdown 파일 {wipeResult.filesDeleted}개를 삭제했습니다.
+            {wipeResult.backupsDeleted > 0 && ` 앱이 만든 복원 전 스냅샷 ${wipeResult.backupsDeleted}개도 삭제했습니다.`}
             {wipeResult.filesFailed > 0 && ` 파일 ${wipeResult.filesFailed}개는 삭제하지 못했습니다.`}
+            {wipeResult.backupsRemaining > 0 && (
+              <div style={{ marginTop: 4 }}>
+                복원 전 스냅샷 {wipeResult.backupsRemaining}개가 <code>{settings.backupsDir}</code>에 남아 있으며, 삭제한 상담 원문이 들어 있습니다.
+              </div>
+            )}
+            <div style={{ marginTop: 4 }}>직접 내려받아 다른 곳에 보관한 백업 파일은 앱이 지울 수 없으니 필요하면 직접 삭제하세요.</div>
           </div>
         )}
         <button className="btn danger" onClick={() => setConfirmWipe(true)}>모든 상담 데이터 삭제</button>
@@ -556,6 +564,18 @@ export default function SettingsPage() {
             `Markdown 기록 파일 (${settings.markdownDir})`,
             settings.lastBackupAt ? `마지막 백업: ${fmtDateTime(settings.lastBackupAt)}` : '백업을 내려받은 적이 없습니다',
           ]}
+          extra={
+            <div className="small" style={{ marginBottom: 10 }}>
+              <label className="row" style={{ gap: 6 }}>
+                <input type="checkbox" checked={wipeSnapshots} onChange={(e) => setWipeSnapshots(e.target.checked)} />
+                앱이 만든 복원 전 자동 스냅샷 {settings.restoreSnapshots}개도 삭제 ({settings.backupsDir})
+              </label>
+              {!wipeSnapshots && settings.restoreSnapshots > 0 && (
+                <div style={{ color: 'var(--warn)', marginTop: 4 }}>체크를 끄면 스냅샷 안에 삭제한 상담 원문이 계속 남습니다.</div>
+              )}
+              <div className="muted" style={{ marginTop: 4 }}>직접 내려받아 다른 곳에 저장한 백업 파일은 삭제되지 않습니다.</div>
+            </div>
+          }
           typeToConfirm="삭제"
           busy={wiping}
           onCancel={() => setConfirmWipe(false)}

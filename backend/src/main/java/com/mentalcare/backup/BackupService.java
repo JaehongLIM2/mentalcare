@@ -128,6 +128,38 @@ public class BackupService {
         return backupsDir;
     }
 
+    /** Safety snapshots written before restores; they contain counseling data and live under data/backups. */
+    public List<Path> safetySnapshots() {
+        if (!Files.isDirectory(backupsDir)) return List.of();
+        try (Stream<Path> s = Files.list(backupsDir)) {
+            return s.filter(p -> p.getFileName().toString().startsWith("before-restore-")).sorted().toList();
+        } catch (IOException e) {
+            return List.of();
+        }
+    }
+
+    /**
+     * Deletes everything this app wrote under data/backups (safety snapshots and leftover temp files).
+     * Downloads the user saved elsewhere are not touched. Caller holds the global maintenance lock.
+     * Returns {deleted, failed}.
+     */
+    public int[] deleteAppBackups() {
+        int ok = 0, failed = 0;
+        if (!Files.isDirectory(backupsDir)) return new int[]{0, 0};
+        try (Stream<Path> s = Files.list(backupsDir)) {
+            for (Path p : s.toList()) {
+                String name = p.getFileName().toString();
+                if (!(name.startsWith("before-restore-") || name.startsWith(".download-") || name.startsWith(".snapshot-")
+                        || name.startsWith(".upload-") || name.startsWith(".work-"))) continue;
+                deleteTree(p);
+                if (Files.exists(p)) failed++; else ok++;
+            }
+        } catch (IOException e) {
+            failed++;
+        }
+        return new int[]{ok, failed};
+    }
+
     // ------------------------------------------------------------------ backup
 
     /**
@@ -235,10 +267,15 @@ public class BackupService {
         if (!locks.tryLockAll()) {
             throw new ConflictException("진행 중인 상담 작업(응답 생성·종료·가져오기)이 있습니다. 끝난 뒤 다시 시도하세요.", null);
         }
-        Path work = workDir("restore");
+        Path work = null;
+        Path staged = null;
         try {
+            work = workDir("restore");
             Extracted e = extract(zip, work);
             List<String> warnings = new ArrayList<>(e.warnings());
+            if (restoreCredentials && !e.credentialFiles().isEmpty()) {
+                credentials.validateRestoreFiles(e.credentialFiles()); // reject before anything changes
+            }
 
             // 1. safety snapshot of the current state
             Files.createDirectories(backupsDir);
@@ -246,40 +283,116 @@ public class BackupService {
             writeZip(safety, false);
             pruneSafetySnapshots();
 
-            // 2. database rows, all or nothing
-            Instant lastBackup = settings.lastBackupAt();
-            long copiedSessions;
-            try (Connection src = openReadOnly(e.db())) {
-                copiedSessions = tx.execute(status -> copyAll(src));
-            }
-            prompts.clearCache();
-            if (lastBackup != null) settings.markBackedUp(lastBackup); // the setting describes this PC, not the backup
+            // 2. the new Markdown folder is fully prepared next to the live one before the database changes
+            staged = stageMarkdown(work, e.markdownFiles());
+            final Path stagedDir = staged;
 
-            // 3. Markdown archives
-            int files = replaceMarkdown(work, e.markdownFiles());
-            int unresolved = relinkMarkdownPaths(e.manifest().markdownDir());
+            // 3. database rows and the folder swap commit together: a failure anywhere rolls both back
+            Instant lastBackup = settings.lastBackupAt();
+            MarkdownSwap swap = new MarkdownSwap(markdownDir, stagedDir);
+            long copiedSessions;
+            int unresolved;
+            try (Connection src = openReadOnly(e.db())) {
+                record Copied(long sessions, int unresolved) {}
+                Copied copied = tx.execute(status -> {
+                    long n = copyAll(src);
+                    int missing = relinkMarkdownPaths(e.manifest().markdownDir(), stagedDir);
+                    if (lastBackup != null) settings.markBackedUp(lastBackup); // describes this PC, not the backup
+                    beforeSwapHook.run();
+                    swap.apply(); // throws → transaction rolls back
+                    return new Copied(n, missing);
+                });
+                copiedSessions = copied.sessions();
+                unresolved = copied.unresolved();
+            } catch (RuntimeException | SQLException ex) {
+                swap.undo(); // commit failed after the swap, or the swap itself failed half-way
+                throw ex;
+            } finally {
+                prompts.clearCache();
+            }
+            staged = null; // now the live folder
+            swap.discardPrevious();
             if (unresolved > 0) {
                 warnings.add("요약 " + unresolved + "건의 Markdown 파일을 찾지 못해 파일 연결을 비웠습니다 (요약 자체는 복원됨).");
             }
 
-            // 4. credentials (opt-in)
+            // 4. credentials (opt-in, validated above). Counseling data is already restored, so a failure here is a warning.
             boolean credentialsRestored = false;
             if (restoreCredentials) {
                 if (e.credentialFiles().isEmpty()) {
                     warnings.add("이 백업에는 로그인 자격증명이 들어 있지 않습니다. 설정에서 ChatGPT를 다시 연결하세요.");
                 } else {
-                    credentials.restoreFiles(e.credentialFiles());
-                    credentialsRestored = true;
-                    warnings.add("자격증명은 백업을 만든 같은 PC·같은 사용자 계정에서만 풀립니다. 연결 상태가 오류로 보이면 다시 로그인하세요.");
+                    try {
+                        credentials.restoreFiles(e.credentialFiles());
+                        credentialsRestored = true;
+                        warnings.add("자격증명은 백업을 만든 같은 PC·같은 사용자 계정에서만 풀립니다. 연결 상태가 오류로 보이면 다시 로그인하세요.");
+                    } catch (com.mentalcare.auth.AuthException ex) {
+                        warnings.add("상담 데이터는 복원했지만 로그인 자격증명은 쓰지 못했습니다. 설정에서 ChatGPT를 다시 연결하세요.");
+                    }
                 }
             }
+            int files = e.markdownFiles().size();
             log.info("backup restored sessions={} markdownFiles={} credentials={}", copiedSessions, files, credentialsRestored);
             return new RestoreResult(copiedSessions, files, safety.getFileName().toString(), credentialsRestored, warnings);
         } catch (IOException | SQLException ex) {
             throw new IllegalStateException("restore failed: " + ex.getClass().getSimpleName(), ex);
         } finally {
+            deleteTree(staged);
             deleteTree(work);
             locks.unlockAll();
+        }
+    }
+
+    /** Test seam: runs inside the restore transaction right before the Markdown folder is swapped. */
+    Runnable beforeSwapHook = () -> { };
+
+    /**
+     * Swaps the live Markdown folder with a prepared one by renaming (same parent, same volume), and can put
+     * the old folder back. The old folder is deleted only after the database commit succeeded.
+     */
+    static final class MarkdownSwap {
+        private final Path live;
+        private final Path staged;
+        private Path previous;
+        private boolean liveReplaced;
+
+        MarkdownSwap(Path live, Path staged) {
+            this.live = live;
+            this.staged = staged;
+        }
+
+        void apply() {
+            try {
+                if (Files.exists(live)) {
+                    previous = live.resolveSibling("." + live.getFileName() + "-before-restore-" + UUID.randomUUID());
+                    Files.move(live, previous);
+                }
+                Files.move(staged, live);
+                liveReplaced = true;
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+
+        /** Restores the folder as it was before {@link #apply()}; safe to call when nothing was moved. */
+        void undo() {
+            try {
+                if (liveReplaced) {
+                    Files.move(live, staged); // keep the restored copy aside; it is deleted with the staging dir
+                    liveReplaced = false;
+                }
+                if (previous != null && Files.exists(previous) && !Files.exists(live)) {
+                    Files.move(previous, live);
+                    previous = null;
+                }
+            } catch (IOException e) {
+                log.error("restore rollback could not move the Markdown folder back: {}", e.getClass().getSimpleName());
+            }
+        }
+
+        void discardPrevious() {
+            deleteTree(previous);
+            previous = null;
         }
     }
 
@@ -350,38 +463,49 @@ public class BackupService {
         return out;
     }
 
-    private int replaceMarkdown(Path work, List<String> files) throws IOException {
-        Files.createDirectories(markdownDir);
-        try (Stream<Path> s = Files.walk(markdownDir)) {
-            for (Path p : s.filter(Files::isRegularFile).filter(f -> f.getFileName().toString().endsWith(".md")).toList()) {
-                Files.deleteIfExists(p);
+    /**
+     * Builds the future Markdown folder beside the live one (same parent so the swap is a rename):
+     * the backup's archives plus any non-Markdown files the user keeps in the live folder.
+     */
+    private Path stageMarkdown(Path work, List<String> files) throws IOException {
+        Path parent = markdownDir.getParent();
+        Files.createDirectories(parent);
+        Path staged = parent.resolve("." + markdownDir.getFileName() + "-restore-" + UUID.randomUUID());
+        Files.createDirectories(staged);
+        if (Files.isDirectory(markdownDir)) {
+            try (Stream<Path> s = Files.walk(markdownDir)) {
+                for (Path p : s.filter(Files::isRegularFile).filter(f -> !f.getFileName().toString().endsWith(".md")).toList()) {
+                    Path to = staged.resolve(markdownDir.relativize(p).toString());
+                    Files.createDirectories(to.getParent());
+                    Files.copy(p, to);
+                }
             }
         }
-        int n = 0;
         for (String rel : files) {
             Path from = work.resolve(MARKDOWN_PREFIX).resolve(rel).normalize();
-            Path to = markdownDir.resolve(rel).normalize();
-            if (!to.startsWith(markdownDir)) continue; // already rejected at extraction; belt and braces
+            Path to = staged.resolve(rel).normalize();
+            if (!to.startsWith(staged)) continue; // already rejected at extraction; belt and braces
             Files.createDirectories(to.getParent());
             Files.copy(from, to, StandardCopyOption.REPLACE_EXISTING);
-            n++;
         }
-        return n;
+        return staged;
     }
 
     /**
      * Summary rows carry the absolute Markdown path of the machine that wrote them. Re-points them to this
      * machine's Markdown folder; rows whose file is missing lose the link. Returns the number unresolved.
      */
-    private int relinkMarkdownPaths(String originalDir) {
+    private int relinkMarkdownPaths(String originalDir, Path lookupDir) {
         List<Object[]> rows = jdbc.sql("SELECT session_id, markdown_path FROM session_summaries WHERE markdown_path IS NOT NULL")
                 .query((rs, i) -> new Object[]{rs.getLong(1), rs.getString(2)}).list();
         int unresolved = 0;
         for (Object[] row : rows) {
             String rel = relativeMarkdownPath((String) row[1], originalDir);
+            // the files are still in the staging folder; the stored path is where they will live after the swap
             Path candidate = rel == null ? null : markdownDir.resolve(rel).normalize();
-            String resolved = candidate != null && candidate.startsWith(markdownDir) && Files.isRegularFile(candidate)
-                    ? candidate.toString() : null;
+            Path staged = rel == null ? null : lookupDir.resolve(rel).normalize();
+            String resolved = candidate != null && candidate.startsWith(markdownDir)
+                    && staged.startsWith(lookupDir) && Files.isRegularFile(staged) ? candidate.toString() : null;
             if (resolved == null) unresolved++;
             jdbc.sql("UPDATE session_summaries SET markdown_path = :p WHERE session_id = :id")
                     .param("p", resolved).param("id", row[0]).update();

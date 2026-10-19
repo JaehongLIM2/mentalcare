@@ -26,6 +26,19 @@ public class DraftRepository {
                 .optional();
     }
 
+    /**
+     * Saves only while the session is ACTIVE, decided in the same statement as the write: a completion or
+     * deletion committed just before cannot be followed by a stray draft. Returns 1 when saved.
+     */
+    public int saveIfActive(long sessionId, String content) {
+        return jdbc.sql("""
+                INSERT INTO drafts (session_id, content, updated_at)
+                SELECT :sid, :content, :now WHERE EXISTS (SELECT 1 FROM sessions WHERE id = :sid AND status = 'ACTIVE')
+                ON CONFLICT(session_id) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at
+                """)
+                .param("sid", sessionId).param("content", content).param("now", now()).update();
+    }
+
     public void save(long sessionId, String content) {
         jdbc.sql("""
                 INSERT INTO drafts (session_id, content, updated_at) VALUES (:sid, :content, :now)

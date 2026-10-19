@@ -109,7 +109,8 @@ export const api = {
     request<void>('POST', `/api/sessions/${id}/draft`, { content }, keepalive),
   completeSession: (id: number) => request<CompletionDto>('POST', `/api/sessions/${id}/complete`),
   deleteSession: (id: number) => request<DeletionResult>('DELETE', `/api/sessions/${id}`),
-  deleteAllData: () => request<DeletionResult>('DELETE', '/api/data', { confirmation: 'DELETE' }),
+  deleteAllData: (includeAppBackups = true) =>
+    request<DeletionResult>('DELETE', '/api/data', { confirmation: 'DELETE', includeAppBackups }),
 
   memories: (status?: MemoryStatus[] | 'ALL') => {
     const q = status === undefined ? '' : status === 'ALL' ? '?status=ALL' : `?status=${status.join(',')}`

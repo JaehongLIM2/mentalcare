@@ -102,7 +102,7 @@ flowchart LR
 
 ### 11-2. 백업과 복원 (Spring Boot ↔ 파일 시스템)
 - 백업: `VACUUM INTO`로 `data/backups/.snapshot-*.db`를 만들어 zip에 넣고 즉시 삭제. Markdown은 `markdownDir` 기준 상대 경로로 수록. 자격증명은 사용자가 체크한 경우에만 암호화 파일 그대로. 완성된 zip은 브라우저로 스트리밍 후 삭제되며 서버에는 남지 않음.
-- 복원: 업로드된 zip을 `data/backups/.work-*`에 안전하게 풀고(allow-list 경로만), DB 검증 후 **복원 전 스냅샷** `before-restore-*.zip`을 먼저 기록 → 한 트랜잭션에서 모든 테이블의 행을 교체 → Markdown 폴더 교체 → 작업 폴더 삭제. OpenAI 등 외부로 나가는 데이터는 없음.
+- 복원: 업로드된 zip을 `data/backups/.work-*`에 안전하게 풀고(allow-list 경로만), DB 검증 후 **복원 전 스냅샷** `before-restore-*.zip`을 먼저 기록 → 새 Markdown 폴더를 옆에 준비 → 한 트랜잭션에서 모든 테이블의 행 교체와 폴더 swap(실패 시 둘 다 되돌림) → 작업 폴더 삭제. 전체 삭제 시 `before-restore-*.zip`도 기본으로 함께 삭제. OpenAI 등 외부로 나가는 데이터는 없음.
 - 로그에는 건수·바이트 수·파일 수만 기록.
 
 ## 12. OpenAI → Spring Boot → Browser

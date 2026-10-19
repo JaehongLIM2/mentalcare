@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "test:security": "node scripts/check-security.mjs"
+    "test:security": "node scripts/check-security.mjs",
+    "test:unit": "node scripts/test-draft-saver.ts"
   },
   "dependencies": {
     "react": "^18.3.1",

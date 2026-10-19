@@ -61,7 +61,7 @@ public class SettingsController {
                 credentials.directory().toAbsolutePath().normalize().toString(),
                 credentials.protector().description(),
                 openAi.hasApiKey(), settings.welcomeShown(), rows,
-                settings.lastBackupAt(), backups.backupsDir().toString());
+                settings.lastBackupAt(), backups.backupsDir().toString(), backups.safetySnapshots().size());
     }
 
     @PatchMapping

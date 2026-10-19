@@ -10,7 +10,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class DataController {
 
-    public record DeleteAllRequest(String confirmation) {}
+    /** {@code includeAppBackups} defaults to true: "delete everything" also removes the restore safety snapshots. */
+    public record DeleteAllRequest(String confirmation, Boolean includeAppBackups) {}
 
     private final DataDeletionService deletion;
 
@@ -26,6 +27,7 @@ public class DataController {
     /** Body must be {"confirmation":"DELETE"}. Settings and the ChatGPT connection are kept. */
     @DeleteMapping("/api/data")
     public DataDeletionService.Result deleteAll(@RequestBody(required = false) DeleteAllRequest request) {
-        return deletion.deleteAll(request == null ? null : request.confirmation());
+        return deletion.deleteAll(request == null ? null : request.confirmation(),
+                request == null || request.includeAppBackups() == null || request.includeAppBackups());
     }
 }

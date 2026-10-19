@@ -67,6 +67,7 @@ export default function SessionDetailPage() {
             '이 상담의 대화 원문, 체크인, AI 요약, 태그, 안전 기록',
             '이 상담에서만 관찰된 기억 후보 (다른 상담에서도 관찰된 기억은 남습니다)',
             summary?.markdownPath ? 'Markdown 기록 파일' : '',
+            '이미 만들어진 백업과 복원 전 스냅샷에는 이 상담이 남아 있습니다 (설정의 전체 삭제로 스냅샷까지 지울 수 있음)',
           ].filter(Boolean)}
           busy={deleting}
           onCancel={() => setConfirmDelete(false)}

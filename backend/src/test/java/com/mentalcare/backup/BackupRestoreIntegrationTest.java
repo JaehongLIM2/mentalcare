@@ -257,6 +257,68 @@ class BackupRestoreIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    @Order(5)
+    void aFailureAfterTheDatabaseCopyRollsBackRowsAndFiles() throws Exception {
+        // current state: the two sessions restored by the previous test plus their Markdown files
+        Session extra = sessions.start(null);
+        counseling.opening(extra.id(), new Listener());
+        counseling.reply(extra.id(), "복원 실패 전에 있던 상담", new Listener());
+        completion.complete(extra.id());
+        long before = sessions.count();
+        Path markdownDir = Path.of(summaries.findBySession(extra.id()).orElseThrow().markdownPath()).getParent().getParent();
+        List<String> filesBefore = listMd(markdownDir);
+        assertThat(filesBefore).isNotEmpty();
+        String profileBefore = settings.profileSummary();
+
+        backups.beforeSwapHook = () -> { throw new IllegalStateException("simulated failure during restore"); };
+        try {
+            assertThatThrownBy(() -> backups.restore(backupZip, false)).hasMessageContaining("simulated failure");
+        } finally {
+            backups.beforeSwapHook = () -> { };
+        }
+
+        assertThat(sessions.count()).isEqualTo(before);                       // rows rolled back
+        assertThat(sessions.detail(extra.id()).messages()).extracting(Message::content).contains("복원 실패 전에 있던 상담");
+        assertThat(settings.profileSummary()).isEqualTo(profileBefore);
+        assertThat(listMd(markdownDir)).containsExactlyElementsOf(filesBefore); // files untouched
+        assertThat(Files.isRegularFile(Path.of(summaries.findBySession(extra.id()).orElseThrow().markdownPath()))).isTrue();
+        try (Stream<Path> siblings = Files.list(markdownDir.getParent())) {    // no staging/displaced folders left
+            assertThat(siblings.map(p -> p.getFileName().toString()).filter(n -> n.startsWith("." + markdownDir.getFileName()))).isEmpty();
+        }
+        // the lock was released: normal work and a real restore still go through
+        Session after = sessions.start(null);
+        completion.complete(after.id());
+        assertThat(backups.restore(backupZip, false).sessionsRestored()).isEqualTo(1);
+        assertThat(sessions.count()).isEqualTo(1);
+    }
+
+    @Test
+    @Order(6)
+    void deleteAllAlsoRemovesTheAppsOwnSnapshotsUnlessAskedToKeepThem() throws Exception {
+        assertThat(backups.safetySnapshots()).isNotEmpty(); // written by the restores above, they hold the old data
+
+        var kept = deletion.deleteAll("DELETE", false);
+        assertThat(kept.backupsDeleted()).isZero();
+        assertThat(kept.backupsRemaining()).isEqualTo(backups.safetySnapshots().size()).isPositive();
+
+        var wiped = deletion.deleteAll("DELETE", true);
+        assertThat(wiped.backupsDeleted()).isPositive();
+        assertThat(wiped.backupsRemaining()).isZero();
+        assertThat(backups.safetySnapshots()).isEmpty();
+        try (Stream<Path> files = Files.list(backups.backupsDir())) {
+            assertThat(files.toList()).isEmpty();
+        }
+        // the downloaded copy outside data/backups is the user's and stays
+        assertThat(Files.isRegularFile(backupZip)).isTrue();
+    }
+
+    private static List<String> listMd(Path dir) throws Exception {
+        try (Stream<Path> s = Files.walk(dir)) {
+            return s.filter(Files::isRegularFile).map(p -> dir.relativize(p).toString()).sorted().toList();
+        }
+    }
+
     private static Path zipOf(String... nameAndContent) throws Exception {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (ZipOutputStream zip = new ZipOutputStream(bytes)) {

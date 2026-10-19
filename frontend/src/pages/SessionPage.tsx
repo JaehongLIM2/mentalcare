@@ -1,4 +1,3 @@
-  const lastSavedDraft = useRef('')
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, CHATGPT_USAGE_URL, errorMessage } from '../api/client'
@@ -8,6 +7,7 @@ import ChatMessage from '../components/ChatMessage'
 import SafetyBanner from '../components/SafetyBanner'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import { fmtTime } from '../util/format'
+import { DraftSaver } from '../util/draftSaver'
 
 const END_PHRASES = ['오늘은 여기까지', '상담 끝', '그만 이야기', '여기까지 할게', '이만 끝']
 const DRAFT_DEBOUNCE_MS = 800
@@ -68,17 +68,19 @@ export default function SessionPage() {
   const scrollDown = () => bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
 
   // ---------------------------------------------------------------- draft autosave (local backend, never browser storage)
-  const flushDraft = useCallback(
-    (keepalive: boolean) => {
-      const text = inputRef.current
-      if (text === lastSavedDraft.current) return
-      lastSavedDraft.current = text
-      api.saveDraft(sessionId, text, keepalive).catch(() => {
-        // a completed/deleted session or a server that is gone: nothing to do, the text is still on screen
-      })
-    },
-    [sessionId],
-  )
+  const [draftFailing, setDraftFailing] = useState(false)
+  const saverRef = useRef<DraftSaver | null>(null)
+  const sessionIdRef = useRef(sessionId)
+  sessionIdRef.current = sessionId
+  if (saverRef.current === null) {
+    // saved only once the server confirmed it; failures stay pending and are retried
+    saverRef.current = new DraftSaver({
+      save: (text, keepalive) => api.saveDraft(sessionIdRef.current, text, keepalive),
+      onStateChange: setDraftFailing,
+    })
+  }
+  const saver = saverRef.current
+  const flushDraft = useCallback((keepalive: boolean) => void saver.flush(inputRef.current, keepalive), [saver])
 
   useEffect(() => {
     const t = window.setTimeout(() => flushDraft(false), DRAFT_DEBOUNCE_MS)
@@ -96,8 +98,9 @@ export default function SessionPage() {
       window.removeEventListener('pagehide', onHide)
       document.removeEventListener('visibilitychange', onVisibility)
       flushDraft(true) // leaving the page through the app's own navigation
+      saver.dispose()
     }
-  }, [flushDraft])
+  }, [flushDraft, saver])
 
   // ---------------------------------------------------------------- context outline
   const loadOutline = useCallback(() => {
@@ -214,7 +217,7 @@ export default function SessionPage() {
         const lastUser = [...d.messages].reverse().find((m) => m.role === 'USER')
         if (lastUser?.riskLevel && lastUser.riskLevel !== 'NONE') setRisk(lastUser.riskLevel)
         if (d.draft && d.draft.content.trim() && !inputRef.current.trim()) {
-          lastSavedDraft.current = d.draft.content
+          saver.markSaved(d.draft.content)
           setInput(d.draft.content)
           setDraftNotice(`${fmtTime(d.draft.updatedAt)}에 저장된 초안을 되살렸습니다.`)
         }
@@ -244,7 +247,7 @@ export default function SessionPage() {
     if (!text || busy) return
     setInput('')
     setDraftNotice(null)
-    lastSavedDraft.current = '' // the server drops the draft when it stores the message
+    saver.markSaved('') // the server drops the draft when it stores the message
     const tempId = -Date.now()
     const optimistic: MessageDto = {
       id: tempId,
@@ -269,7 +272,7 @@ export default function SessionPage() {
     setError(null)
     try {
       const result = await api.completeSession(sessionId)
-      lastSavedDraft.current = inputRef.current // the server dropped the draft; do not re-save it on unmount
+      saver.markSaved(inputRef.current) // the server dropped the draft; do not re-save it on unmount
       navigate(`/history/${sessionId}`, { replace: true, state: { completion: result } })
     } catch (e) {
       setError(errorMessage(e) + ' 상담은 그대로 유지됩니다. 잠시 후 다시 종료를 시도하세요.')
@@ -281,7 +284,7 @@ export default function SessionPage() {
     setDeleting(true)
     try {
       await api.deleteSession(sessionId)
-      lastSavedDraft.current = inputRef.current
+      saver.markSaved(inputRef.current)
       navigate('/', { replace: true })
     } catch (e) {
       setError(errorMessage(e))
@@ -328,7 +331,7 @@ export default function SessionPage() {
       {confirmDelete && (
         <ConfirmDeleteModal
           title="진행 중인 상담을 삭제할까요?"
-          details={['지금까지의 대화와 체크인이 요약 없이 사라집니다.', '작성 중이던 초안도 함께 삭제됩니다.']}
+          details={['지금까지의 대화와 체크인이 요약 없이 사라집니다.', '작성 중이던 초안도 함께 삭제됩니다.', '이미 만들어진 백업과 복원 전 스냅샷에는 남아 있을 수 있습니다.']}
           busy={deleting}
           onCancel={() => setConfirmDelete(false)}
           onConfirm={doDelete}
@@ -406,7 +409,7 @@ export default function SessionPage() {
             {phase === 'idle' && (
               <>
                 상담자는 진단하지 않으며, 당신이 생각을 정리하도록 돕는 역할만 합니다.
-                {' · '}작성 중인 글은 이 PC에 자동 저장됩니다.
+                {' · '}{draftFailing ? <b style={{ color: 'var(--warn)' }}>초안 자동 저장 실패 · 다시 시도 중</b> : '작성 중인 글은 이 PC에 자동 저장됩니다.'}
               </>
             )}
             {' · '}Using ChatGPT plan · <a href={CHATGPT_USAGE_URL} target="_blank" rel="noreferrer noopener">Manage usage</a>

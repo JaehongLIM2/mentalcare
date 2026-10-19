@@ -116,7 +116,8 @@ public final class ApiDtos {
                               int recentSessionCount, String profileSummary, String goals,
                               String dataDir, String markdownDir, String credentialsDir, String credentialProvider,
                               boolean apiKeyConfigured, boolean welcomeShown,
-                              List<UsageDto> usageLast30Days, Instant lastBackupAt, String backupsDir) {}
+                              List<UsageDto> usageLast30Days, Instant lastBackupAt, String backupsDir,
+                              int restoreSnapshots) {}
 
     public record UsageDto(String model, String requestType, long requests, long inputTokens, long outputTokens) {}
 

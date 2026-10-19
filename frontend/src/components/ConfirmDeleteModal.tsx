@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 
 interface Props {
   title: string
@@ -7,12 +7,14 @@ interface Props {
   /** When set, the user must type this word before the button enables. */
   typeToConfirm?: string
   busy?: boolean
+  /** Options or notes shown under the list (e.g. what stays behind). */
+  extra?: ReactNode
   onCancel: () => void
   onConfirm: () => void
 }
 
 /** Destructive-action dialog: states irreversibility plainly and never has delete as the default/focused action. */
-export default function ConfirmDeleteModal({ title, details, typeToConfirm, busy, onCancel, onConfirm }: Props) {
+export default function ConfirmDeleteModal({ title, details, typeToConfirm, busy, extra, onCancel, onConfirm }: Props) {
   const [typed, setTyped] = useState('')
   const ready = !typeToConfirm || typed.trim() === typeToConfirm
   return (
@@ -27,6 +29,7 @@ export default function ConfirmDeleteModal({ title, details, typeToConfirm, busy
             <li key={i}>{d}</li>
           ))}
         </ul>
+        {extra}
         {typeToConfirm && (
           <label className="field">
             <span>계속하려면 <b>{typeToConfirm}</b> 를 입력하세요</span>

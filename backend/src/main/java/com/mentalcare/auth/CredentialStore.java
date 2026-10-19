@@ -156,6 +156,17 @@ public class CredentialStore {
      * again; {@link #load()} reports that instead of guessing.
      */
     public synchronized void restoreFiles(java.util.Map<String, byte[]> files) {
+        validateRestoreFiles(files);
+        try {
+            for (var e : files.entrySet()) writeAtomic(dir.resolve(e.getKey()), e.getValue());
+            log.info("credential files restored from backup count={}", files.size());
+        } catch (IOException e) {
+            throw new AuthException(AuthException.Code.STORAGE, "Cannot restore credential files", e);
+        }
+    }
+
+    /** Checks names and shapes of credential files from a backup without writing anything. */
+    public void validateRestoreFiles(java.util.Map<String, byte[]> files) {
         try {
             for (var e : files.entrySet()) {
                 String name = e.getKey();
@@ -181,10 +192,8 @@ public class CredentialStore {
                     default -> throw new AuthException(AuthException.Code.STORAGE, "Unexpected credential file name in backup");
                 }
             }
-            for (var e : files.entrySet()) writeAtomic(dir.resolve(e.getKey()), e.getValue());
-            log.info("credential files restored from backup count={}", files.size());
         } catch (IOException e) {
-            throw new AuthException(AuthException.Code.STORAGE, "Cannot restore credential files", e);
+            throw new AuthException(AuthException.Code.STORAGE, "Credential file in backup is not valid JSON", e);
         }
     }
 

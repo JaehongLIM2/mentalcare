@@ -202,6 +202,7 @@ export interface SettingsDto {
   usageLast30Days: UsageDto[]
   lastBackupAt?: string | null
   backupsDir: string
+  restoreSnapshots: number
 }
 
 export interface AuthStatus {
@@ -264,6 +265,10 @@ export interface DeletionResult {
   sessionsDeleted: number
   filesDeleted: number
   filesFailed: number
+  /** Restore safety snapshots under data/backups removed by delete-all. */
+  backupsDeleted: number
+  /** Safety snapshots still present (they contain the deleted data). */
+  backupsRemaining: number
 }
 
 /** What the counselor will refer to on the next turn (GET /api/sessions/{id}/context). */
