@@ -3,6 +3,7 @@ package com.mentalcare.counseling;
 import com.mentalcare.ai.LlmClient;
 import com.mentalcare.ai.LlmException;
 import com.mentalcare.ai.LlmUsage;
+import com.mentalcare.context.ContextOutline;
 import com.mentalcare.context.CounselingContext;
 import com.mentalcare.context.CounselingContextBuilder;
 import com.mentalcare.context.SafetyMode;
@@ -11,6 +12,7 @@ import com.mentalcare.domain.Enums.MessageStatus;
 import com.mentalcare.domain.Enums.RiskLevel;
 import com.mentalcare.domain.Message;
 import com.mentalcare.domain.Session;
+import com.mentalcare.repository.DraftRepository;
 import com.mentalcare.repository.MessageRepository;
 import com.mentalcare.repository.SessionRepository;
 import com.mentalcare.safety.SafetyDecision;
@@ -37,6 +39,7 @@ public class CounselingService {
     private final SessionService sessionService;
     private final SessionRepository sessions;
     private final MessageRepository messages;
+    private final DraftRepository drafts;
     private final SafetyService safety;
     private final CounselingContextBuilder contextBuilder;
     private final LlmClient llm;
@@ -44,11 +47,12 @@ public class CounselingService {
     private final SessionLocks locks;
 
     public CounselingService(SessionService sessionService, SessionRepository sessions, MessageRepository messages,
-                             SafetyService safety, CounselingContextBuilder contextBuilder, LlmClient llm,
-                             UsageRecorder usage, SessionLocks locks) {
+                             DraftRepository drafts, SafetyService safety, CounselingContextBuilder contextBuilder,
+                             LlmClient llm, UsageRecorder usage, SessionLocks locks) {
         this.sessionService = sessionService;
         this.sessions = sessions;
         this.messages = messages;
+        this.drafts = drafts;
         this.safety = safety;
         this.contextBuilder = contextBuilder;
         this.llm = llm;
@@ -98,8 +102,9 @@ public class CounselingService {
                 return;
             }
 
-            // 1. Persist first so nothing is lost if the AI call fails.
+            // 1. Persist first so nothing is lost if the AI call fails. The sent text is no longer a draft.
             Message userMessage = messages.insert(sessionId, MessageRole.USER, userText.trim(), MessageStatus.COMPLETE, null);
+            drafts.delete(sessionId);
             sessions.touch(sessionId);
             listener.onUserSaved(userMessage);
 
@@ -122,8 +127,53 @@ public class CounselingService {
         }
     }
 
+    /**
+     * Requests the reply again after a failed or interrupted generation, <b>without</b> saving the user's
+     * message a second time. The last saved user message (and its stored safety level) is reused; a partial
+     * reply left behind by the interruption is marked FAILED so it neither reaches the model nor the screen.
+     * If the reply did arrive in the meantime (the browser only lost the connection), nothing is generated.
+     */
+    public void retry(long sessionId, TurnListener listener) {
+        if (!locks.tryLock(sessionId)) {
+            listener.onError(BUSY_MESSAGE, "BUSY");
+            return;
+        }
+        try {
+            Session session = sessionService.get(sessionId);
+            if (!session.isActive()) {
+                listener.onError("이미 종료된 상담입니다.", "CONFLICT");
+                return;
+            }
+            List<Message> all = messages.findBySession(sessionId);
+            Message last = all.isEmpty() ? null : all.get(all.size() - 1);
+            if (last != null && last.role() == MessageRole.ASSISTANT && last.status() == MessageStatus.INTERRUPTED) {
+                messages.updateStatus(last.id(), MessageStatus.FAILED);
+                all = messages.findBySession(sessionId);
+            }
+            Message lastUsable = all.stream().filter(m -> m.status() != MessageStatus.FAILED).reduce((a, b) -> b).orElse(null);
+            if (lastUsable != null && lastUsable.role() == MessageRole.ASSISTANT) {
+                listener.onError("답변이 이미 저장되어 있습니다. 화면을 새로고침하면 보입니다.", "ALREADY_ANSWERED");
+                return;
+            }
+            boolean opening = lastUsable == null; // the greeting itself failed
+            RiskLevel risk = lastUsable == null || lastUsable.riskLevel() == null ? RiskLevel.NONE : lastUsable.riskLevel();
+            SafetyMode mode = switch (risk) {
+                case IMMINENT -> SafetyMode.CRISIS;
+                case ELEVATED -> SafetyMode.CAUTION;
+                case LOW, NONE -> session.crisisFlag() ? SafetyMode.CAUTION : SafetyMode.NORMAL;
+            };
+            if (risk != RiskLevel.NONE) listener.onSafety(risk);
+            log.info("retrying reply session={} opening={}", sessionId, opening);
+            generate(session, all, opening, mode, listener);
+        } finally {
+            locks.unlock(sessionId);
+        }
+    }
+
     private void generate(Session session, List<Message> sessionMessages, boolean opening, SafetyMode mode,
                           TurnListener listener) {
+        ContextOutline.Budget budget = contextBuilder.budgetOf(sessionMessages);
+        listener.onContext(budget.included(), budget.omitted());
         CounselingContext context = contextBuilder.build(session, sessionMessages, opening, mode);
         StringBuilder buffer = new StringBuilder();
         try {

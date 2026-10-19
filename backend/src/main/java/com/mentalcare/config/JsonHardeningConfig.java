@@ -33,6 +33,8 @@ public class JsonHardeningConfig {
 
         @Override
         public SerializableString getEscapeSequence(int ch) {
+            // Jackson also asks for every non-ASCII code point: answer null so Korean/Japanese text stays readable
+            if (ch >= escapes.length || escapes[ch] != CharacterEscapes.ESCAPE_CUSTOM) return null;
             return new SerializedString(String.format("\\u%04x", ch));
         }
     }

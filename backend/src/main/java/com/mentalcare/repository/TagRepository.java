@@ -27,6 +27,17 @@ public class TagRepository {
         }
     }
 
+    public record TagCount(String name, long count) {}
+
+    public List<TagCount> allWithCounts() {
+        return jdbc.sql("""
+                SELECT t.name, COUNT(st.session_id) AS n FROM tags t
+                LEFT JOIN session_tags st ON st.tag_id = t.id
+                GROUP BY t.id ORDER BY n DESC, t.name
+                """)
+                .query((rs, i) -> new TagCount(rs.getString("name"), rs.getLong("n"))).list();
+    }
+
     public List<String> findBySession(long sessionId) {
         return jdbc.sql("""
                 SELECT t.name FROM tags t JOIN session_tags st ON st.tag_id = t.id

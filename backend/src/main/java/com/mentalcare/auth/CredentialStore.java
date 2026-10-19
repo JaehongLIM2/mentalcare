@@ -150,6 +150,44 @@ public class CredentialStore {
         }
     }
 
+    /**
+     * Writes credential files taken from a backup (names from the fixed allow-list only, shapes checked,
+     * contents never logged). A file written by another protector stays unreadable until the user signs in
+     * again; {@link #load()} reports that instead of guessing.
+     */
+    public synchronized void restoreFiles(java.util.Map<String, byte[]> files) {
+        try {
+            for (var e : files.entrySet()) {
+                String name = e.getKey();
+                byte[] bytes = e.getValue();
+                if (bytes == null || bytes.length > MAX_FILE_BYTES) {
+                    throw new AuthException(AuthException.Code.STORAGE, "Credential file in backup has an unexpected size");
+                }
+                switch (name) {
+                    case AUTH_FILE -> {
+                        JsonNode n = mapper.readTree(bytes);
+                        if (!n.path("provider").isTextual() || !n.path("ciphertext").isTextual()) {
+                            throw new AuthException(AuthException.Code.STORAGE, "Credential file in backup has an unexpected shape");
+                        }
+                    }
+                    case HOST_FILE -> {
+                        if (!mapper.readTree(bytes).path("id").asText("").startsWith("urn:uuid:")) {
+                            throw new AuthException(AuthException.Code.STORAGE, "Host id file in backup has an unexpected shape");
+                        }
+                    }
+                    case ".master.key" -> {
+                        if (bytes.length > 4096) throw new AuthException(AuthException.Code.STORAGE, "Key file in backup has an unexpected size");
+                    }
+                    default -> throw new AuthException(AuthException.Code.STORAGE, "Unexpected credential file name in backup");
+                }
+            }
+            for (var e : files.entrySet()) writeAtomic(dir.resolve(e.getKey()), e.getValue());
+            log.info("credential files restored from backup count={}", files.size());
+        } catch (IOException e) {
+            throw new AuthException(AuthException.Code.STORAGE, "Cannot restore credential files", e);
+        }
+    }
+
     public synchronized void delete() {
         try {
             Files.deleteIfExists(dir.resolve(AUTH_FILE));

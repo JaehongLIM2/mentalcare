@@ -32,6 +32,13 @@ flowchart LR
 | `POST /api/sessions/{id}/messages` | 사용자 메시지 1건 |
 | `POST /api/sessions/{id}/opening` | 없음 |
 | `POST /api/sessions/{id}/complete` | 없음 (서버가 DB에서 대화를 읽음) |
+| `POST /api/sessions/{id}/retry` | 없음 (서버가 저장된 마지막 사용자 메시지를 재사용) |
+| `POST /api/sessions/{id}/draft` | 작성 중 텍스트(초안) 1건; 탭 종료 시 `keepalive`로 전송 |
+| `GET /api/sessions?q=&from=&to=&tag=` | 검색어·기간·태그 (서버 내부 SQLite LIKE 검색, 외부 전송 없음) |
+| `GET /api/sessions/{id}/context` | 없음 — 응답으로 기억·요약 목록·메시지 포함/생략 수를 받음(프롬프트 원문은 없음) |
+| `GET /api/backup?credentials=` | 없음 — 응답으로 zip(DB 스냅샷·Markdown·선택 시 암호화된 자격증명)을 내려받음 |
+| `POST /api/backup/inspect`, `POST /api/backup/restore` | 백업 zip 업로드(+`confirmation=RESTORE`, `credentials=`) |
+| `GET /api/system/status`, `POST /api/system/shutdown` | 없음 / `{"ifIdle":true}` |
 | `PATCH /api/memories/{id}` | 기억 내용/상태 |
 | `PATCH /api/settings` | 프로필, 목표, 모델 선택, reasoning |
 | `POST /api/auth/chatgpt/start` | 돌아올 loopback URL |
@@ -40,7 +47,7 @@ flowchart LR
 응답으로 브라우저가 받는 것: 세션/메시지/요약/기억 JSON, 인증 **상태**(이메일, scope 목록, 만료 시각). **토큰은 절대 포함되지 않습니다.**
 
 ### 3. Spring Boot → SQLite (`data/mentalcare.db`)
-- `sessions`, `messages`(원문), `weekly_checkins`, `session_summaries`(요약 JSON), `memories`, `memory_observations`, `tags`, `safety_events`(점수·판정만), `api_usage`(토큰 수만), `app_settings`(프로필/목표/모델 선택/welcome 플래그), `prompt_versions`.
+- `sessions`, `messages`(원문), `weekly_checkins`, `session_summaries`(요약 JSON), `memories`, `memory_observations`, `tags`, `safety_events`(점수·판정만), `api_usage`(토큰 수만), `app_settings`(프로필/목표/모델 선택/welcome 플래그/마지막 백업 시각), `prompt_versions`, `drafts`(세션당 작성 중 텍스트 1건, 전송·종료·삭제 시 제거).
 - 저장되지 않는 것: OAuth 토큰, API 키, 요청/응답 raw JSON.
 
 ### 4. Spring Boot → Markdown (`data/sessions/YYYY/YYYY-MM-DD[-id].md`)
@@ -92,6 +99,11 @@ flowchart LR
 - 사용자가 설정 화면에서 고른 Markdown 파일이 multipart 업로드로 백엔드에 전달됩니다(같은 PC, 2MB 제한). 서버는 임의 경로를 읽지 않습니다.
 - 저장: `sessions`(kind=IMPORTED), `session_summaries`(섹션별 요약 + `importedContext`), `imported_archives`(원문 Markdown), `memories`/`memory_observations`(후보, CANDIDATE), `tags`(imported).
 - **OpenAI로 가는 것**: 이후 상담 요청의 `instructions` 안 `<<<DATA 이관된 과거 기록>>>` 블록에 각 이관 기록의 "핵심 맥락" 텍스트(총 6,000자 상한)가 들어갑니다. 원문 Markdown 전체나 섹션 전체는 보내지 않습니다. 이관 후보가 ACTIVE로 확정되면 장기 기억 블록으로도 전달됩니다.
+
+### 11-2. 백업과 복원 (Spring Boot ↔ 파일 시스템)
+- 백업: `VACUUM INTO`로 `data/backups/.snapshot-*.db`를 만들어 zip에 넣고 즉시 삭제. Markdown은 `markdownDir` 기준 상대 경로로 수록. 자격증명은 사용자가 체크한 경우에만 암호화 파일 그대로. 완성된 zip은 브라우저로 스트리밍 후 삭제되며 서버에는 남지 않음.
+- 복원: 업로드된 zip을 `data/backups/.work-*`에 안전하게 풀고(allow-list 경로만), DB 검증 후 **복원 전 스냅샷** `before-restore-*.zip`을 먼저 기록 → 한 트랜잭션에서 모든 테이블의 행을 교체 → Markdown 폴더 교체 → 작업 폴더 삭제. OpenAI 등 외부로 나가는 데이터는 없음.
+- 로그에는 건수·바이트 수·파일 수만 기록.
 
 ## 12. OpenAI → Spring Boot → Browser
 - SSE `response.output_text.delta` → 백엔드가 DB에 누적 저장 → 브라우저에 `delta` 이벤트 전달.

@@ -1,0 +1,273 @@
+package com.mentalcare.backup;
+
+import com.mentalcare.auth.CredentialStore;
+import com.mentalcare.common.ConflictException;
+import com.mentalcare.config.SettingsService;
+import com.mentalcare.counseling.CounselingService;
+import com.mentalcare.counseling.DataDeletionService;
+import com.mentalcare.counseling.SessionCompletionService;
+import com.mentalcare.counseling.SessionService;
+import com.mentalcare.counseling.TurnListener;
+import com.mentalcare.domain.Enums.RiskLevel;
+import com.mentalcare.domain.Message;
+import com.mentalcare.domain.Session;
+import com.mentalcare.memory.MemoryService;
+import com.mentalcare.repository.SummaryRepository;
+import com.mentalcare.testsupport.FakeLlm;
+import com.mentalcare.testsupport.FakeLlmConfig;
+import com.mentalcare.testsupport.TestDirs;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+@Import(FakeLlmConfig.class)
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+class BackupRestoreIntegrationTest {
+
+    @DynamicPropertySource
+    static void dirs(DynamicPropertyRegistry registry) {
+        TestDirs.register(registry, "backup");
+    }
+
+    static class Listener implements TurnListener {
+        final List<String> errors = new ArrayList<>();
+        @Override public void onUserSaved(Message m) {}
+        @Override public void onSafety(RiskLevel r) {}
+        @Override public void onDelta(String t) {}
+        @Override public void onDone(Message m) {}
+        @Override public void onError(String m, String k) { errors.add(k); }
+    }
+
+    @Autowired BackupService backups;
+    @Autowired FakeLlm llm;
+    @Autowired SessionService sessions;
+    @Autowired CounselingService counseling;
+    @Autowired SessionCompletionService completion;
+    @Autowired DataDeletionService deletion;
+    @Autowired MemoryService memories;
+    @Autowired SummaryRepository summaries;
+    @Autowired SettingsService settings;
+    @Autowired CredentialStore credentials;
+    @Autowired MockMvc mvc;
+
+    static Path backupZip;
+    static long originalSessionId;
+    static String originalMarkdown;
+
+    @Test
+    @Order(1)
+    void backupContainsDatabaseMarkdownAndNoCredentialsByDefault() throws Exception {
+        llm.reset();
+        settings.updateAll(new SettingsService.SettingsUpdate(null, null, "백업 테스트 프로필", null, null, null, null));
+        Session s = sessions.start(null);
+        counseling.opening(s.id(), new Listener());
+        counseling.reply(s.id(), "백업 전에 남긴 이야기", new Listener());
+        var result = completion.complete(s.id());
+        originalSessionId = s.id();
+        originalMarkdown = result.summary().markdownPath();
+        assertThat(originalMarkdown).isNotNull();
+        credentials.hostId(); // creates the non-secret host file
+
+        assertThat(settings.lastBackupAt()).isNull();
+        Path zip = backups.createForDownload(false);
+        backupZip = Files.createTempFile("mentalcare-backup-test", ".zip");
+        Files.copy(zip, backupZip, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.deleteIfExists(zip);
+
+        try (ZipFile z = new ZipFile(backupZip.toFile())) {
+            List<String> names = z.stream().map(ZipEntry::getName).toList();
+            assertThat(names).contains("manifest.json", "mentalcare.db");
+            assertThat(names).anyMatch(n -> n.startsWith("sessions/") && n.endsWith(".md"));
+            assertThat(names).noneMatch(n -> n.startsWith("credentials/"));
+            String manifest = new String(z.getInputStream(z.getEntry("manifest.json")).readAllBytes(), StandardCharsets.UTF_8);
+            assertThat(manifest).contains("\"format\" : \"mentalcare-backup\"").contains("\"includesCredentials\" : false");
+        }
+        assertThat(settings.lastBackupAt()).isNotNull();
+        assertThat(backups.inspect(backupZip).sessions()).isEqualTo(1);
+
+        // opt-in: the (encrypted / non-secret) credential files travel with the backup
+        Path withCreds = backups.createForDownload(true);
+        try (ZipFile z = new ZipFile(withCreds.toFile())) {
+            assertThat(z.stream().map(ZipEntry::getName).toList()).contains("credentials/chatgpt-host.json");
+        }
+        Files.deleteIfExists(withCreds);
+    }
+
+    @Test
+    @Order(2)
+    void restoreReplacesCurrentDataAndLeavesASafetySnapshot() throws Exception {
+        // change the world after the backup
+        deletion.deleteAll("DELETE");
+        settings.updateAll(new SettingsService.SettingsUpdate(null, null, "복원 전 바뀐 프로필", null, null, null, null));
+        Session later = sessions.start(null);
+        counseling.opening(later.id(), new Listener());
+        counseling.reply(later.id(), "백업 이후의 상담", new Listener());
+        completion.complete(later.id());
+        assertThat(sessions.count()).isEqualTo(1);
+        Instant lastBackup = settings.lastBackupAt();
+
+        BackupService.RestoreResult r = backups.restore(backupZip, false);
+
+        assertThat(r.sessionsRestored()).isEqualTo(1);
+        assertThat(r.markdownFilesRestored()).isGreaterThanOrEqualTo(1);
+        assertThat(r.credentialsRestored()).isFalse();
+        assertThat(sessions.count()).isEqualTo(1);
+        assertThat(sessions.detail(originalSessionId).messages()).extracting(Message::content).contains("백업 전에 남긴 이야기");
+        assertThat(sessions.detail(originalSessionId).summary()).isNotNull();
+        assertThatThrownBy(() -> sessions.detail(later.id())).hasMessageContaining("not found");
+        assertThat(settings.profileSummary()).isEqualTo("백업 테스트 프로필");
+        assertThat(settings.lastBackupAt()).isEqualTo(lastBackup); // describes this PC, not the backup
+        assertThat(memories.memoriesForDeduplication()).isNotEmpty();
+
+        // Markdown is back and the summary points at the restored file
+        String path = summaries.findBySession(originalSessionId).orElseThrow().markdownPath();
+        assertThat(path).isNotNull();
+        assertThat(Files.isRegularFile(Path.of(path))).isTrue();
+        assertThat(Files.readString(Path.of(path))).contains("# 상담 기록");
+
+        // the state before the restore can itself be restored
+        try (Stream<Path> files = Files.list(backups.backupsDir())) {
+            assertThat(files.map(p -> p.getFileName().toString()).filter(n -> n.startsWith("before-restore-")).count()).isEqualTo(1);
+        }
+        try (Stream<Path> files = Files.list(backups.backupsDir())) {
+            assertThat(files.map(p -> p.getFileName().toString()).noneMatch(n -> n.startsWith(".work-"))).isTrue();
+        }
+
+        // the app keeps working on the restored rows (prompt version ids, new sessions, memory counts)
+        Session next = sessions.start(null);
+        Listener l = new Listener();
+        counseling.opening(next.id(), l);
+        assertThat(l.errors).isEmpty();
+        completion.complete(next.id());
+        assertThat(sessions.count()).isEqualTo(2);
+    }
+
+    @Test
+    @Order(3)
+    void restoreIsRefusedWhileATurnIsRunningAndRejectsBadArchives() throws Exception {
+        llm.reset();
+        Session s = sessions.start(null);
+        CountDownLatch gate = new CountDownLatch(1);
+        llm.gate = gate;
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> turn = pool.submit(() -> counseling.opening(s.id(), new Listener()));
+            Thread.sleep(300);
+            assertThatThrownBy(() -> backups.restore(backupZip, false)).isInstanceOf(ConflictException.class);
+            Files.deleteIfExists(backups.createForDownload(false)); // backups may run beside turns
+            gate.countDown();
+            turn.get(5, TimeUnit.SECONDS);
+        } finally {
+            llm.gate = null;
+            pool.shutdownNow();
+            completion.complete(s.id());
+        }
+        long before = sessions.count();
+
+        // zip-slip entry
+        Path slip = zipOf("sessions/../../evil.md", "x", "manifest.json", "{}");
+        assertThatThrownBy(() -> backups.restore(slip, false)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("경로");
+        // foreign zip
+        Path foreign = zipOf("readme.txt", "hello");
+        assertThatThrownBy(() -> backups.inspect(foreign)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("manifest");
+        // right manifest, broken database
+        Path broken = zipOf("manifest.json", "{\"format\":\"mentalcare-backup\",\"app\":\"mentalcare\",\"version\":1}", "mentalcare.db", "not a database");
+        assertThatThrownBy(() -> backups.restore(broken, false)).isInstanceOf(IllegalArgumentException.class);
+        // newer format
+        Path newer = zipOf("manifest.json", "{\"format\":\"mentalcare-backup\",\"app\":\"mentalcare\",\"version\":99}", "mentalcare.db", "x");
+        assertThatThrownBy(() -> backups.inspect(newer)).hasMessageContaining("새로운 버전");
+        // not a zip at all
+        Path text = Files.createTempFile("notzip", ".zip");
+        Files.writeString(text, "plain text");
+        assertThatThrownBy(() -> backups.inspect(text)).isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(sessions.count()).isEqualTo(before); // nothing was touched
+        assertThat(backups.restore(backupZip, false).sessionsRestored()).isEqualTo(1); // still restorable afterwards
+    }
+
+    @Test
+    @Order(4)
+    void httpEndpointsStreamTheZipAndDemandConfirmation() throws Exception {
+        MvcResult started = mvc.perform(get("/api/backup").header("Host", "127.0.0.1:8080"))
+                .andExpect(request().asyncStarted()).andReturn();
+        MvcResult done = mvc.perform(asyncDispatch(started))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("mentalcare-backup-")))
+                .andReturn();
+        byte[] body = done.getResponse().getContentAsByteArray();
+        assertThat(body.length).isGreaterThan(1000);
+        assertThat(new String(body, 0, 2, StandardCharsets.ISO_8859_1)).isEqualTo("PK");
+        try (Stream<Path> files = Files.list(backups.backupsDir())) {
+            assertThat(files.map(p -> p.getFileName().toString()).noneMatch(n -> n.startsWith(".download-"))).isTrue();
+        }
+
+        MockMultipartFile upload = new MockMultipartFile("file", "b.zip", "application/zip", body);
+        mvc.perform(multipart("/api/backup/inspect").file(upload).header("Host", "127.0.0.1:8080"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sessions").value(1))
+                .andExpect(jsonPath("$.includesCredentials").value(false));
+        mvc.perform(multipart("/api/backup/restore").file(upload).header("Host", "127.0.0.1:8080"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(multipart("/api/backup/restore").file(upload).param("confirmation", "RESTORE").header("Host", "127.0.0.1:8080"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sessionsRestored").value(1));
+        mvc.perform(multipart("/api/backup/restore").file(upload).param("confirmation", "RESTORE")
+                        .header("Host", "127.0.0.1:8080").header("Sec-Fetch-Site", "cross-site"))
+                .andExpect(status().isForbidden());
+    }
+
+    private static Path zipOf(String... nameAndContent) throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (ZipOutputStream zip = new ZipOutputStream(bytes)) {
+            for (int i = 0; i < nameAndContent.length; i += 2) {
+                zip.putNextEntry(new ZipEntry(nameAndContent[i]));
+                zip.write(nameAndContent[i + 1].getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+            }
+        }
+        Path file = Files.createTempFile("mentalcare-bad-backup", ".zip");
+        Files.write(file, bytes.toByteArray());
+        return file;
+    }
+}

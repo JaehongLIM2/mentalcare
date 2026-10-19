@@ -71,6 +71,12 @@ public class SessionLocks {
         }
     }
 
+    /** Number of sessions with a turn/completion/deletion in progress (plus one while delete-all/restore runs). */
+    public int busyCount() {
+        int n = (int) locks.values().stream().filter(ReentrantLock::isLocked).count();
+        return global.isWriteLocked() ? n + 1 : n;
+    }
+
     public boolean isBusy(long sessionId) {
         ReentrantLock lock = locks.get(sessionId);
         return lock != null && lock.isLocked();

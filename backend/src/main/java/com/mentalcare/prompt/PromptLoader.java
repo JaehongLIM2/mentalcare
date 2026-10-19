@@ -46,6 +46,11 @@ public class PromptLoader {
         this.repository = repository;
     }
 
+    /** Forgets registered version ids; needed after the prompt_versions table was replaced (backup restore). */
+    public void clearCache() {
+        cache.clear();
+    }
+
     public LoadedPrompt load(String name) {
         return cache.computeIfAbsent(name, this::loadFromClasspath);
     }

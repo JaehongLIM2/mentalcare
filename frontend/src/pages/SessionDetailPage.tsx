@@ -126,7 +126,7 @@ export default function SessionDetailPage() {
             아래는 실제 대화 원문입니다. AI 요약과 혼동되지 않도록 분리해 보여줍니다.
           </div>
           <div className="chat">
-            {messages.map((m) => (
+            {messages.filter((m) => m.status !== 'FAILED').map((m) => (
               <ChatMessage key={m.id} role={m.role} content={m.content} createdAt={m.createdAt} status={m.status} />
             ))}
             {messages.length === 0 && <div className="muted">대화가 없습니다.</div>}

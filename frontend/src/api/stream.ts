@@ -3,13 +3,15 @@ import type { ErrorDto, MessageDto, RiskLevel } from './types'
 export interface TurnHandlers {
   onUserSaved?: (messageId: number) => void
   onSafety?: (level: RiskLevel) => void
+  /** How much of this session the model sees on this turn (older messages are omitted first). */
+  onContext?: (includedMessages: number, omittedMessages: number) => void
   onDelta: (text: string) => void
   onDone?: (message: MessageDto) => void
   onError: (message: string, kind?: string) => void
 }
 
 /**
- * POSTs to a streaming endpoint and dispatches SSE events (user_saved, safety, delta, done, error).
+ * POSTs to a streaming endpoint and dispatches SSE events (user_saved, safety, context, delta, done, error).
  * Uses fetch + ReadableStream because EventSource cannot send a POST body.
  */
 export async function streamTurn(
@@ -83,6 +85,9 @@ export async function streamTurn(
       case 'safety':
         handlers.onSafety?.(obj.riskLevel as RiskLevel)
         break
+      case 'context':
+        handlers.onContext?.(Number(obj.includedMessages ?? 0), Number(obj.omittedMessages ?? 0))
+        break
       case 'delta':
         handlers.onDelta(String(obj.text ?? ''))
         break
@@ -113,7 +118,7 @@ export async function streamTurn(
     }
     if (buffer.trim()) dispatch(buffer)
     if (!terminal && !signal?.aborted) {
-      handlers.onError('응답이 완료되기 전에 연결이 끊겼습니다. 저장된 내용은 새로고침 후 확인하세요.', 'STREAM_INTERRUPTED')
+      handlers.onError('응답이 완료되기 전에 연결이 끊겼습니다.', 'STREAM_INTERRUPTED')
     }
   } catch {
     if (!signal?.aborted) handlers.onError('응답 스트리밍이 중단되었습니다.', 'STREAM_INTERRUPTED')

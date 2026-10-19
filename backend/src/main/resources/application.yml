@@ -27,8 +27,9 @@ spring:
     default-property-inclusion: non_null
   servlet:
     multipart:
-      max-file-size: 2MB
-      max-request-size: 3MB
+      # Backup archives can be large; the archive import endpoint enforces its own 2MB limit.
+      max-file-size: 1024MB
+      max-request-size: 1030MB
 
 mentalcare:
   # All counseling data (SQLite + Markdown) lives under this directory. Git-ignored.
@@ -36,6 +37,9 @@ mentalcare:
   markdown-dir: ${mentalcare.data-dir}/sessions
   # OAuth credentials (encrypted) live apart from the counseling database.
   credentials-dir: ${MENTALCARE_CREDENTIALS_DIR:${mentalcare.data-dir}/credentials}
+  # Safety snapshots written before a restore (and nothing else) go here.
+  backups-dir: ${mentalcare.data-dir}/backups
+  version: 0.2.0
   # How many recent completed sessions are summarized into the context.
   recent-session-count: 3
   # Home screen: recommend the next session this many days after the last one.

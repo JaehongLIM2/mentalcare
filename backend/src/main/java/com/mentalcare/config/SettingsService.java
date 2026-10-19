@@ -22,6 +22,7 @@ public class SettingsService {
     public static final String KEY_MODEL_COUNSELING = "model.counseling";
     public static final String KEY_MODEL_UTILITY = "model.utility";
     public static final String KEY_WELCOME_SHOWN = "siwc.welcome_shown";
+    public static final String KEY_LAST_BACKUP = "backup.last_at";
 
     private static final Set<String> EFFORTS = Set.of("low", "medium", "high");
     private static final Pattern MODEL_SLUG = Pattern.compile("^[a-zA-Z0-9._:\\-]{1,200}$");
@@ -72,6 +73,17 @@ public class SettingsService {
 
     public boolean welcomeShown() {
         return repository.get(KEY_WELCOME_SHOWN).map(Boolean::parseBoolean).orElse(false);
+    }
+
+    /** When the user last downloaded a backup (null = never). */
+    public java.time.Instant lastBackupAt() {
+        return repository.get(KEY_LAST_BACKUP).map(v -> {
+            try { return java.time.Instant.parse(v); } catch (java.time.format.DateTimeParseException e) { return null; }
+        }).orElse(null);
+    }
+
+    public void markBackedUp(java.time.Instant at) {
+        repository.set(KEY_LAST_BACKUP, at.toString());
     }
 
     public String emergencyResourcesText() {

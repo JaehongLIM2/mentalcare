@@ -1,8 +1,26 @@
 import { useEffect, useState } from 'react'
-import { api, errorMessage, importApi } from '../api/client'
-import type { DeletionResult, ImportPreview, ImportResult, ModelCatalog, SettingsDto } from '../api/types'
+import { api, backupApi, errorMessage, importApi } from '../api/client'
+import type {
+  BackupInspection,
+  DeletionResult,
+  ImportPreview,
+  ImportResult,
+  ModelCatalog,
+  RestoreResult,
+  SettingsDto,
+  SystemStatus,
+} from '../api/types'
 import ChatGptConnect from '../components/ChatGptConnect'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
+import ConfirmModal from '../components/ConfirmModal'
+import { SHUTDOWN_EVENT } from '../components/ServerStatus'
+import { fmtDateTime } from '../util/format'
+
+function fmtUptime(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  return h > 0 ? `${h}시간 ${m}분` : `${m}분`
+}
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingsDto | null>(null)
@@ -26,6 +44,23 @@ export default function SettingsPage() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [importing, setImporting] = useState(false)
 
+  // backup & restore
+  const [backupCreds, setBackupCreds] = useState(false)
+  const [backingUp, setBackingUp] = useState(false)
+  const [backupNotice, setBackupNotice] = useState<string | null>(null)
+  const [restoreFile, setRestoreFile] = useState<File | null>(null)
+  const [inspection, setInspection] = useState<BackupInspection | null>(null)
+  const [restoreCreds, setRestoreCreds] = useState(false)
+  const [confirmRestore, setConfirmRestore] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+  const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null)
+
+  // app status & quit
+  const [system, setSystem] = useState<SystemStatus | null>(null)
+  const [confirmQuit, setConfirmQuit] = useState(false)
+  const [quitting, setQuitting] = useState(false)
+  const [stopped, setStopped] = useState(false)
+
   const apply = (s: SettingsDto) => {
     setSettings(s)
     setForm({
@@ -41,10 +76,14 @@ export default function SettingsPage() {
   const loadAll = (refreshModels = false) => {
     api.settings().then(apply).catch((e) => setError(errorMessage(e)))
     api.models(refreshModels).then(setCatalog).catch(() => setCatalog(null))
+    api.system.status().then(setSystem).catch(() => setSystem(null))
   }
 
   useEffect(() => {
     loadAll(false)
+    if (window.location.hash === '#app-status') {
+      window.setTimeout(() => document.getElementById('app-status')?.scrollIntoView({ behavior: 'smooth' }), 200)
+    }
   }, [])
 
   const save = async () => {
@@ -103,6 +142,86 @@ export default function SettingsPage() {
     } finally {
       setWiping(false)
     }
+  }
+
+  const downloadBackup = async () => {
+    setBackingUp(true)
+    setError(null)
+    setBackupNotice(null)
+    try {
+      const name = await backupApi.download(backupCreds)
+      setBackupNotice(`백업 파일 ${name} 을(를) 내려받았습니다. 다른 저장 장치나 클라우드에 옮겨 두세요.`)
+      api.settings().then(apply).catch(() => {})
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setBackingUp(false)
+    }
+  }
+
+  const pickRestore = async (file: File | null) => {
+    setRestoreFile(file)
+    setInspection(null)
+    setRestoreResult(null)
+    setRestoreCreds(false)
+    if (!file) return
+    setRestoring(true)
+    setError(null)
+    try {
+      setInspection(await backupApi.inspect(file))
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setRestoring(false)
+    }
+  }
+
+  const runRestore = async () => {
+    if (!restoreFile) return
+    setRestoring(true)
+    setError(null)
+    try {
+      setRestoreResult(await backupApi.restore(restoreFile, restoreCreds))
+      setConfirmRestore(false)
+      setRestoreFile(null)
+      setInspection(null)
+      loadAll(true)
+    } catch (e) {
+      setError(errorMessage(e))
+      setConfirmRestore(false)
+    } finally {
+      setRestoring(false)
+    }
+  }
+
+  const quit = async () => {
+    setQuitting(true)
+    setError(null)
+    try {
+      await api.system.shutdown()
+      setStopped(true)
+      setConfirmQuit(false)
+      window.dispatchEvent(new Event(SHUTDOWN_EVENT))
+    } catch (e) {
+      setError(errorMessage(e))
+      setConfirmQuit(false)
+    } finally {
+      setQuitting(false)
+    }
+  }
+
+  if (stopped) {
+    return (
+      <div className="card overlay-note">
+        <h1>앱이 종료되었습니다</h1>
+        <p className="muted">
+          서버가 정상적으로 멈췄고 상담 데이터는 모두 저장되어 있습니다. 이 브라우저 탭은 닫아도 됩니다.
+        </p>
+        <p className="muted small">
+          다시 사용하려면 <b>MentalCare 시작.cmd</b>(Windows) 또는 <code>docker compose up</code>으로 실행하세요.
+        </p>
+      </div>
+    )
   }
 
   if (error && !settings) return <div className="alert error">{error}</div>
@@ -210,6 +329,143 @@ export default function SettingsPage() {
         <button className="btn primary" onClick={save} disabled={busy}>{busy ? '저장 중…' : '저장'}</button>
       </div>
 
+      <div className="card">
+        <h2>백업과 복원</h2>
+        <p className="muted small">
+          백업 파일(zip) 하나에 상담 데이터베이스(대화·요약·기억·설정)와 Markdown 기록이 모두 들어갑니다.
+          로그인 자격증명은 기본적으로 제외되며, 포함하더라도 암호화된 상태 그대로이고 같은 PC·같은 사용자 계정에서만 풀립니다.
+        </p>
+        <table className="plain">
+          <tbody>
+            <tr>
+              <th>마지막 백업</th>
+              <td>
+                {settings.lastBackupAt ? fmtDateTime(settings.lastBackupAt) : <span style={{ color: 'var(--warn)' }}>아직 백업한 적이 없습니다</span>}
+              </td>
+            </tr>
+            <tr><th>복원 전 자동 스냅샷</th><td><code>{settings.backupsDir}</code> (최근 5개 보관)</td></tr>
+          </tbody>
+        </table>
+        <div className="row" style={{ marginTop: 10 }}>
+          <button className="btn primary" onClick={downloadBackup} disabled={backingUp}>
+            {backingUp ? '백업 만드는 중…' : '백업 파일 내려받기'}
+          </button>
+          <label className="small row" style={{ gap: 6 }}>
+            <input type="checkbox" checked={backupCreds} onChange={(e) => setBackupCreds(e.target.checked)} />
+            로그인 자격증명(암호화됨)도 포함
+          </label>
+        </div>
+        {backupNotice && <div className="alert info" style={{ marginTop: 10 }}>{backupNotice}</div>}
+
+        <h3 style={{ marginTop: 18 }}>백업에서 복원</h3>
+        <p className="muted small">
+          복원하면 현재 데이터가 백업 시점의 내용으로 <b>통째로 바뀝니다</b>. 복원 직전 상태는 자동 스냅샷으로 남으므로 다시 되돌릴 수 있습니다.
+        </p>
+        <input
+          type="file"
+          accept=".zip,application/zip"
+          onChange={(e) => void pickRestore(e.target.files?.[0] ?? null)}
+          disabled={restoring}
+        />
+        {inspection && restoreFile && (
+          <div className="card soft" style={{ marginTop: 12 }}>
+            <table className="plain">
+              <tbody>
+                <tr><th>백업 시점</th><td>{inspection.createdAt ? fmtDateTime(inspection.createdAt) : '알 수 없음'}{inspection.appVersion && ` · 앱 ${inspection.appVersion}`}</td></tr>
+                <tr><th>상담 / 메시지 / 기억</th><td>{inspection.sessions} / {inspection.messages} / {inspection.memories}</td></tr>
+                <tr><th>Markdown 파일</th><td>{inspection.markdownFiles}개</td></tr>
+                <tr><th>자격증명</th><td>{inspection.includesCredentials ? '포함됨' : '없음'}</td></tr>
+              </tbody>
+            </table>
+            {inspection.warnings.length > 0 && (
+              <ul className="small" style={{ color: 'var(--warn)' }}>
+                {inspection.warnings.map((w, i) => <li key={i}>{w}</li>)}
+              </ul>
+            )}
+            {inspection.includesCredentials && (
+              <label className="small row" style={{ gap: 6, marginTop: 6 }}>
+                <input type="checkbox" checked={restoreCreds} onChange={(e) => setRestoreCreds(e.target.checked)} />
+                로그인 자격증명도 복원 (같은 PC·같은 계정일 때만 동작)
+              </label>
+            )}
+            <button className="btn danger" onClick={() => setConfirmRestore(true)} disabled={restoring} style={{ marginTop: 8 }}>
+              이 백업으로 복원…
+            </button>
+          </div>
+        )}
+        {restoreResult && (
+          <div className="alert info" style={{ marginTop: 10 }}>
+            상담 {restoreResult.sessionsRestored}건과 Markdown 파일 {restoreResult.markdownFilesRestored}개를 복원했습니다.
+            복원 전 상태는 <code>{restoreResult.preRestoreBackup}</code>으로 남겨 두었습니다.
+            {restoreResult.credentialsRestored && ' 로그인 자격증명도 복원했습니다.'}
+            {restoreResult.warnings.length > 0 && (
+              <ul className="small" style={{ marginTop: 6 }}>
+                {restoreResult.warnings.map((w, i) => <li key={i}>{w}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+
+      {confirmRestore && inspection && (
+        <ConfirmModal
+          title="백업으로 되돌릴까요?"
+          confirmLabel="복원"
+          busyLabel="복원하는 중…"
+          danger
+          busy={restoring}
+          onCancel={() => setConfirmRestore(false)}
+          onConfirm={runRestore}
+        >
+          <p>
+            지금 있는 모든 상담 기록·기억·설정·Markdown 파일이{' '}
+            <b>{inspection.createdAt ? fmtDateTime(inspection.createdAt) : '백업'} 시점의 내용(상담 {inspection.sessions}건)</b>으로 바뀝니다.
+          </p>
+          <p>복원 직전 상태는 자동으로 스냅샷에 저장되어 되돌릴 수 있습니다. 진행 중인 응답 생성이 있으면 거부됩니다.</p>
+        </ConfirmModal>
+      )}
+
+      <div className="card soft" id="app-status">
+        <h2>앱 실행 상태</h2>
+        <p className="muted small">
+          이 앱은 브라우저가 아니라 이 PC에서 돌아가는 작은 서버입니다. 브라우저 탭을 닫아도 서버는 계속 실행되며, 아래 버튼이나
+          <b> MentalCare 종료.cmd</b>로 끌 수 있습니다. 왼쪽 메뉴 아래의 표시로 실행 여부를 항상 확인할 수 있습니다.
+        </p>
+        {system ? (
+          <table className="plain">
+            <tbody>
+              <tr><th>상태</th><td><span className="badge active">실행 중</span>{system.busySessions > 0 && <span className="badge ai" style={{ marginLeft: 6 }}>응답 생성 중 {system.busySessions}</span>}</td></tr>
+              <tr><th>시작 시각</th><td>{fmtDateTime(system.startedAt)} (가동 {fmtUptime(system.uptimeSeconds)})</td></tr>
+              <tr><th>주소</th><td><code>http://127.0.0.1:{system.port}</code> · PID {system.pid} · 버전 {system.version}{system.docker ? ' · Docker' : ''}</td></tr>
+            </tbody>
+          </table>
+        ) : (
+          <div className="muted small">상태를 가져오지 못했습니다.</div>
+        )}
+        <button className="btn danger" onClick={() => setConfirmQuit(true)} disabled={!system} style={{ marginTop: 10 }}>
+          앱 종료
+        </button>
+      </div>
+
+      {confirmQuit && (
+        <ConfirmModal
+          title="앱을 종료할까요?"
+          confirmLabel="종료"
+          busyLabel="종료하는 중…"
+          busy={quitting}
+          disabled={(system?.busySessions ?? 0) > 0}
+          onCancel={() => setConfirmQuit(false)}
+          onConfirm={quit}
+        >
+          <p>서버가 멈추고 이 화면은 더 이상 동작하지 않습니다. 저장된 상담 데이터는 그대로 남습니다.</p>
+          {(system?.busySessions ?? 0) > 0 ? (
+            <p style={{ color: 'var(--danger)' }}>답변 생성이 진행 중입니다. 끝난 뒤 종료하세요.</p>
+          ) : (
+            <p className="muted">다시 시작하려면 MentalCare 시작.cmd 또는 docker compose up 을 실행하세요.</p>
+          )}
+        </ConfirmModal>
+      )}
+
       <div className="card soft">
         <h2>구성 (읽기 전용)</h2>
         <table className="plain">
@@ -279,8 +535,8 @@ export default function SettingsPage() {
       <div className="card" style={{ borderColor: 'var(--danger)' }}>
         <h2 style={{ color: 'var(--danger)' }}>데이터 삭제</h2>
         <p className="muted small">
-          모든 상담 기록(대화 원문, 체크인, 요약, 기억, 태그, 안전 기록, Markdown 파일)을 영구 삭제합니다. 프로필·목표·모델 설정과 ChatGPT
-          연결은 유지됩니다. 개별 상담은 상담 상세 화면에서 삭제할 수 있습니다.
+          모든 상담 기록(대화 원문, 체크인, 요약, 기억, 태그, 안전 기록, 초안, Markdown 파일)을 영구 삭제합니다. 프로필·목표·모델 설정과 ChatGPT
+          연결은 유지됩니다. 개별 상담은 상담 상세 화면에서 삭제할 수 있습니다. 삭제 전에 위에서 백업을 먼저 내려받아 두세요.
         </p>
         {wipeResult && (
           <div className="alert info">
@@ -295,9 +551,10 @@ export default function SettingsPage() {
         <ConfirmDeleteModal
           title="모든 상담 데이터를 삭제할까요?"
           details={[
-            '모든 상담의 대화 원문, 체크인, AI 요약, 태그, 안전 기록',
+            '모든 상담의 대화 원문, 체크인, AI 요약, 태그, 안전 기록, 작성 중 초안',
             '모든 장기 기억(후보·확정·보관)과 API 사용량 기록',
             `Markdown 기록 파일 (${settings.markdownDir})`,
+            settings.lastBackupAt ? `마지막 백업: ${fmtDateTime(settings.lastBackupAt)}` : '백업을 내려받은 적이 없습니다',
           ]}
           typeToConfirm="삭제"
           busy={wiping}

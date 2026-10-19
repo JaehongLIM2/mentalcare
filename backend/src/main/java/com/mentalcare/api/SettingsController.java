@@ -29,9 +29,12 @@ public class SettingsController {
     private final BearerTokenProvider tokens;
     private final ModelCatalogService models;
     private final CredentialStore credentials;
+    private final com.mentalcare.backup.BackupService backups;
 
     public SettingsController(SettingsService settings, OpenAiProperties openAi, AppProperties app, UsageRepository usage,
-                              BearerTokenProvider tokens, ModelCatalogService models, CredentialStore credentials) {
+                              BearerTokenProvider tokens, ModelCatalogService models, CredentialStore credentials,
+                              com.mentalcare.backup.BackupService backups) {
+        this.backups = backups;
         this.settings = settings;
         this.openAi = openAi;
         this.app = app;
@@ -57,7 +60,8 @@ public class SettingsController {
                 Path.of(app.markdownDir()).toAbsolutePath().normalize().toString(),
                 credentials.directory().toAbsolutePath().normalize().toString(),
                 credentials.protector().description(),
-                openAi.hasApiKey(), settings.welcomeShown(), rows);
+                openAi.hasApiKey(), settings.welcomeShown(), rows,
+                settings.lastBackupAt(), backups.backupsDir().toString());
     }
 
     @PatchMapping

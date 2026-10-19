@@ -6,6 +6,7 @@ import com.mentalcare.common.Dates;
 import com.mentalcare.config.AppProperties;
 import com.mentalcare.config.SettingsService;
 import com.mentalcare.domain.Enums.MemoryKind;
+import com.mentalcare.domain.Enums.MessageRole;
 import com.mentalcare.domain.Enums.MessageStatus;
 import com.mentalcare.domain.Memory;
 import com.mentalcare.domain.Message;
@@ -37,6 +38,9 @@ import java.util.Set;
  * (profile, goals, memories, summaries, check-in note) is placed inside explicit
  * {@code <<<DATA ...>>>} blocks that the system prompt declares to be data, not instructions.
  * Delimiter look-alikes inside the data are neutralised.
+ *
+ * <p>{@link #outline(Session, List)} describes the same selection without the prompt text so the
+ * user can see what the counselor is referring to; both go through the same selection methods.
  */
 @Component
 public class CounselingContextBuilder {
@@ -81,11 +85,12 @@ public class CounselingContextBuilder {
 
         appendProfile(sb);
         appendMemories(sb, memoryService.activeMemories());
-        appendImportedArchives(sb);
+        appendImportedArchives(sb, selectImported());
         appendRecentSummaries(sb, session.id());
         appendCheckIn(sb, session, checkIns.findBySession(session.id()));
 
-        List<ContextMessage> messages = budgeted(sessionMessages, app.context().maxSessionCharsOrDefault());
+        ContextOutline.Budget budget = budget(sessionMessages, app.context().maxSessionCharsOrDefault());
+        List<ContextMessage> messages = new ArrayList<>(budget.messages());
         if (opening) {
             messages.add(ContextMessage.developer(prompts.load(PromptLoader.OPENING_CUE).content()));
         }
@@ -93,8 +98,46 @@ public class CounselingContextBuilder {
                 settings.counselingReasoningEffort());
     }
 
+    /** The selection the next turn of this session would use, for display. No prompt text, no model call. */
+    public ContextOutline outline(Session session, List<Message> sessionMessages) {
+        List<Memory> active = memoryService.activeMemories();
+        List<ContextOutline.MemoryRef> memories = dedupe(active, app.context().maxActiveMemories()).stream()
+                .map(m -> new ContextOutline.MemoryRef(m.id(), m.content(), m.kind().name(), m.category()))
+                .toList();
+
+        int count = settings.recentSessionCount();
+        List<Session> recent = recentSessions(session.id(), count);
+        Map<Long, SessionSummary> byId = summaries.findBySessions(recent.stream().map(Session::id).toList());
+        List<ContextOutline.SummaryRef> recentRefs = recent.stream()
+                .map(s -> new ContextOutline.SummaryRef(s.id(), Dates.isoDate(s.startedAt()), s.title(), byId.containsKey(s.id())))
+                .toList();
+
+        List<ContextOutline.ImportedRef> imported = selectImported().stream()
+                .map(i -> new ContextOutline.ImportedRef(i.source().sessionId(), i.source().date(), i.source().title(),
+                        i.text().length(), i.truncated()))
+                .toList();
+
+        Optional<WeeklyCheckIn> checkIn = checkIns.findBySession(session.id());
+        ContextOutline.Budget budget = budget(sessionMessages, app.context().maxSessionCharsOrDefault());
+        return new ContextOutline(
+                !settings.profileSummary().isBlank(),
+                !settings.goals().isBlank(),
+                checkIn.isPresent() && !checkIn.get().isEmpty(),
+                memories, active.size(), recentRefs, count, imported,
+                budget.included(), budget.omitted(), budget.chars(), app.context().maxSessionCharsOrDefault());
+    }
+
+    /** Budget statistics for the current session, used to tell the user when older messages are omitted. */
+    public ContextOutline.Budget budgetOf(List<Message> sessionMessages) {
+        return budget(sessionMessages, app.context().maxSessionCharsOrDefault());
+    }
+
     /** Keeps the most recent messages that fit the character budget; notes the omission as a developer message. */
     static List<ContextMessage> budgeted(List<Message> sessionMessages, int maxChars) {
+        return budget(sessionMessages, maxChars).messages();
+    }
+
+    static ContextOutline.Budget budget(List<Message> sessionMessages, int maxChars) {
         List<ContextMessage> reversed = new ArrayList<>();
         int used = 0, omitted = 0;
         for (int i = sessionMessages.size() - 1; i >= 0; i--) {
@@ -102,7 +145,7 @@ public class CounselingContextBuilder {
             if (m.status() == MessageStatus.FAILED || m.content().isBlank()) continue;
             if (used + m.content().length() > maxChars && !reversed.isEmpty()) { omitted++; continue; }
             used += m.content().length();
-            reversed.add(m.role() == com.mentalcare.domain.Enums.MessageRole.USER
+            reversed.add(m.role() == MessageRole.USER
                     ? ContextMessage.user(m.content()) : ContextMessage.assistant(m.content()));
         }
         List<ContextMessage> messages = new ArrayList<>();
@@ -110,7 +153,32 @@ public class CounselingContextBuilder {
             messages.add(ContextMessage.developer("(이 상담의 앞부분 메시지 " + omitted + "개는 길이 제한으로 생략되었습니다. 생략된 내용을 추측하지 말고 필요하면 사용자에게 물어보세요.)"));
         }
         for (int i = reversed.size() - 1; i >= 0; i--) messages.add(reversed.get(i));
-        return messages;
+        return new ContextOutline.Budget(messages, reversed.size(), omitted, used);
+    }
+
+    // ------------------------------------------------------------------ selection (shared by build and outline)
+
+    private List<Session> recentSessions(long currentSessionId, int count) {
+        if (count <= 0) return List.of();
+        return sessions.findRecentCompleted(count + 1).stream()
+                .filter(s -> s.id() != currentSessionId).limit(count).toList();
+    }
+
+    /** An imported archive's core context as it will appear: text cut to the remaining budget. */
+    record SelectedImport(ArchiveImportService.ImportedContext source, String text, boolean truncated) {}
+
+    private List<SelectedImport> selectImported() {
+        List<SelectedImport> out = new ArrayList<>();
+        int budget = app.context().importedContextMaxCharsOrDefault();
+        for (ArchiveImportService.ImportedContext c : archiveImports.importedContexts()) {
+            if (budget <= 0) break;
+            String text = c.text().strip();
+            boolean truncated = text.length() > budget;
+            if (truncated) text = text.substring(0, budget) + " …(이하 생략)";
+            budget -= text.length();
+            out.add(new SelectedImport(c, text, truncated));
+        }
+        return out;
     }
 
     // ------------------------------------------------------------------ sections
@@ -143,19 +211,14 @@ public class CounselingContextBuilder {
     }
 
     /** Core context of archives imported from another assistant: always present, capped, data only. */
-    private void appendImportedArchives(StringBuilder sb) {
-        List<ArchiveImportService.ImportedContext> imported = archiveImports.importedContexts();
+    private void appendImportedArchives(StringBuilder sb, List<SelectedImport> imported) {
         if (imported.isEmpty()) return;
-        int budget = app.context().importedContextMaxCharsOrDefault();
         StringBuilder body = new StringBuilder();
         body.append("## 이전 상담 도구에서 이관된 기록 (이 앱 이전의 상담 요약, 사용자가 검토한 자료)\n");
-        for (ArchiveImportService.ImportedContext c : imported) {
-            String text = c.text().strip();
-            if (text.length() > budget) text = text.substring(0, Math.max(0, budget)) + " …(이하 생략)";
-            budget -= text.length();
-            body.append("### ").append(c.date()).append(c.title() == null ? "" : " — " + c.title()).append("\n")
-                    .append(text).append("\n\n");
-            if (budget <= 0) break;
+        for (SelectedImport c : imported) {
+            body.append("### ").append(c.source().date())
+                    .append(c.source().title() == null ? "" : " — " + c.source().title()).append("\n")
+                    .append(c.text()).append("\n\n");
         }
         block(sb, "이관된 과거 기록", body.toString());
     }
@@ -169,8 +232,7 @@ public class CounselingContextBuilder {
             block(sb, "최근 상담 요약", body.toString());
             return;
         }
-        List<Session> recent = sessions.findRecentCompleted(count + 1).stream()
-                .filter(s -> s.id() != currentSessionId).limit(count).toList();
+        List<Session> recent = recentSessions(currentSessionId, count);
         if (recent.isEmpty()) {
             body.append("(첫 상담입니다. 이전 기록이 없습니다.)\n");
             block(sb, "최근 상담 요약", body.toString());

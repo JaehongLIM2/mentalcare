@@ -37,6 +37,8 @@ public final class ApiDtos {
 
     public record SendMessageRequest(@NotBlank @Size(max = 20000) String content) {}
 
+    public record SaveDraftRequest(@Size(max = 20000) String content) {}
+
     public record UpdateMemoryRequest(@Size(max = 2000) String content, @Size(max = 50) String category, MemoryStatus status) {}
 
     public record UpdateSettingsRequest(String counselingReasoningEffort, Integer recentSessionCount,
@@ -75,7 +77,15 @@ public final class ApiDtos {
     }
 
     public record SessionDetailDto(SessionDto session, CheckInDto checkIn, List<MessageDto> messages,
-                                   SummaryDto summary, List<String> tags, String importedMarkdown) {}
+                                   SummaryDto summary, List<String> tags, String importedMarkdown, DraftDto draft) {}
+
+    public record DraftDto(String content, Instant updatedAt) {
+        public static DraftDto of(com.mentalcare.domain.Draft d) {
+            return d == null ? null : new DraftDto(d.content(), d.updatedAt());
+        }
+    }
+
+    public record TagCountDto(String name, long count) {}
 
     public record SessionListItemDto(SessionDto session, List<String> topics, List<String> tags,
                                      String oneLine, CheckInDto checkIn) {}
@@ -106,7 +116,7 @@ public final class ApiDtos {
                               int recentSessionCount, String profileSummary, String goals,
                               String dataDir, String markdownDir, String credentialsDir, String credentialProvider,
                               boolean apiKeyConfigured, boolean welcomeShown,
-                              List<UsageDto> usageLast30Days) {}
+                              List<UsageDto> usageLast30Days, Instant lastBackupAt, String backupsDir) {}
 
     public record UsageDto(String model, String requestType, long requests, long inputTokens, long outputTokens) {}
 

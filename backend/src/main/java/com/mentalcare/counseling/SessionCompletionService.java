@@ -17,6 +17,7 @@ import com.mentalcare.export.MarkdownExporter;
 import com.mentalcare.memory.MemoryService;
 import com.mentalcare.prompt.PromptLoader;
 import com.mentalcare.repository.CheckInRepository;
+import com.mentalcare.repository.DraftRepository;
 import com.mentalcare.repository.MessageRepository;
 import com.mentalcare.repository.SessionRepository;
 import com.mentalcare.repository.SummaryRepository;
@@ -65,13 +66,16 @@ public class SessionCompletionService {
     private final TransactionTemplate tx;
     private final com.mentalcare.ai.ModelCatalogService models;
     private final SessionLocks locks;
+    private final DraftRepository drafts;
 
     public SessionCompletionService(SessionService sessionService, SessionRepository sessions,
                                     MessageRepository messages, CheckInRepository checkIns,
                                     SummaryRepository summaries, TagRepository tags, MemoryService memoryService,
                                     MarkdownExporter markdown, PromptLoader prompts, LlmClient llm,
                                     UsageRecorder usage, TransactionTemplate tx,
-                                    com.mentalcare.ai.ModelCatalogService models, SessionLocks locks) {
+                                    com.mentalcare.ai.ModelCatalogService models, SessionLocks locks,
+                                    DraftRepository drafts) {
+        this.drafts = drafts;
         this.models = models;
         this.locks = locks;
         this.sessionService = sessionService;
@@ -111,6 +115,7 @@ public class SessionCompletionService {
         if (!hasUserMessages) {
             // Nothing to summarize: close quietly without calling the model.
             sessions.markCompleted(sessionId, "(대화 없음)", Instant.now());
+            drafts.delete(sessionId);
             return new CompletionResult(sessionService.get(sessionId), null, List.of(),
                     new MemoryService.IngestResult(0, 0, 0), null);
         }
@@ -132,6 +137,7 @@ public class SessionCompletionService {
             tags.replaceSessionTags(sessionId, normalizedTags);
             MemoryService.IngestResult ingest = memoryService.ingest(sessionId, output.memoryCandidates());
             sessions.markCompleted(sessionId, title, Instant.now());
+            drafts.delete(sessionId);
             return new Persisted(summary, ingest);
         });
 

@@ -59,6 +59,11 @@ public class MessageRepository {
                 .param("sid", sessionId).query(Long.class).single();
     }
 
+    public void updateStatus(long id, MessageStatus status) {
+        jdbc.sql("UPDATE messages SET status = :status WHERE id = :id")
+                .param("status", status.name()).param("id", id).update();
+    }
+
     public void updateRisk(long id, RiskLevel risk) {
         jdbc.sql("UPDATE messages SET risk_level = :risk WHERE id = :id")
                 .param("risk", risk.name()).param("id", id).update();

@@ -41,6 +41,11 @@ export interface MessageDto {
   createdAt: string
 }
 
+export interface DraftDto {
+  content: string
+  updatedAt: string
+}
+
 export interface MemoryCandidate {
   content: string
   kind: MemoryKind
@@ -77,6 +82,7 @@ export interface SessionDetailDto {
   summary?: SummaryDto | null
   tags: string[]
   importedMarkdown?: string | null
+  draft?: DraftDto | null
 }
 
 export interface SessionListItemDto {
@@ -85,6 +91,23 @@ export interface SessionListItemDto {
   tags: string[]
   oneLine?: string | null
   checkIn?: CheckInDto | null
+}
+
+export interface SessionListPage {
+  items: SessionListItemDto[]
+  total: number
+}
+
+export interface TagCount {
+  name: string
+  count: number
+}
+
+export interface SessionFilter {
+  q?: string
+  from?: string
+  to?: string
+  tag?: string
 }
 
 export interface CompletionDto {
@@ -177,6 +200,8 @@ export interface SettingsDto {
   apiKeyConfigured: boolean
   welcomeShown: boolean
   usageLast30Days: UsageDto[]
+  lastBackupAt?: string | null
+  backupsDir: string
 }
 
 export interface AuthStatus {
@@ -239,6 +264,54 @@ export interface DeletionResult {
   sessionsDeleted: number
   filesDeleted: number
   filesFailed: number
+}
+
+/** What the counselor will refer to on the next turn (GET /api/sessions/{id}/context). */
+export interface ContextOutline {
+  profileIncluded: boolean
+  goalsIncluded: boolean
+  checkInIncluded: boolean
+  memories: { id: number; content: string; kind: MemoryKind; category: string }[]
+  activeMemoryTotal: number
+  recentSummaries: { sessionId: number; date: string; title?: string | null; hasSummary: boolean }[]
+  recentSummaryLimit: number
+  importedArchives: { sessionId: number; date: string; title?: string | null; charsIncluded: number; truncated: boolean }[]
+  messagesIncluded: number
+  messagesOmitted: number
+  charsIncluded: number
+  charsBudget: number
+}
+
+export interface BackupInspection {
+  createdAt?: string | null
+  appVersion?: string | null
+  sessions: number
+  messages: number
+  memories: number
+  markdownFiles: number
+  includesCredentials: boolean
+  warnings: string[]
+}
+
+export interface RestoreResult {
+  sessionsRestored: number
+  markdownFilesRestored: number
+  preRestoreBackup: string
+  credentialsRestored: boolean
+  warnings: string[]
+}
+
+export interface SystemStatus {
+  status: string
+  app: string
+  version: string
+  pid: number
+  startedAt: string
+  uptimeSeconds: number
+  port: number
+  dataDir: string
+  busySessions: number
+  docker: boolean
 }
 
 export interface ErrorDto {

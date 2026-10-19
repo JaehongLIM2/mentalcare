@@ -23,7 +23,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Streaming endpoints. Events: user_saved, safety, delta, done, error.
+ * Streaming endpoints. Events: user_saved, safety, context, delta, done, error.
  * The counseling turn keeps running (and is persisted) even if the browser disconnects.
  */
 @RestController
@@ -57,6 +57,15 @@ public class MessageStreamController {
         return emitter;
     }
 
+    /** Asks for the reply again after an interruption; the user's message is not saved twice. */
+    @PostMapping(value = "/retry", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter retry(@PathVariable long id) {
+        SseEmitter emitter = new SseEmitter(TIMEOUT_MS);
+        EmitterListener listener = new EmitterListener(emitter);
+        executor.submit(() -> run(() -> counseling.retry(id, listener), listener));
+        return emitter;
+    }
+
     private void run(Runnable turn, EmitterListener listener) {
         try {
             turn.run();
@@ -82,6 +91,7 @@ public class MessageStreamController {
 
         @Override public void onUserSaved(Message m) { send("user_saved", Map.of("messageId", m.id())); }
         @Override public void onSafety(RiskLevel level) { send("safety", Map.of("riskLevel", level.name())); }
+        @Override public void onContext(int included, int omitted) { send("context", Map.of("includedMessages", included, "omittedMessages", omitted)); }
         @Override public void onDelta(String text) { send("delta", Map.of("text", text)); }
         @Override public void onDone(Message m) { send("done", MessageDto.of(m)); }
         @Override public void onError(String message, String kind) { send("error", Map.of("message", message, "kind", kind)); }

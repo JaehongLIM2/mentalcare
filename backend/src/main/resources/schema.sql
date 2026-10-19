@@ -123,3 +123,10 @@ CREATE TABLE IF NOT EXISTS imported_archives (
     content_hash  TEXT,
     imported_at   TEXT NOT NULL
 );
+
+-- Unsent composer text of an active session, so a refresh or closed tab does not lose it.
+CREATE TABLE IF NOT EXISTS drafts (
+    session_id  INTEGER PRIMARY KEY REFERENCES sessions(id),
+    content     TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);

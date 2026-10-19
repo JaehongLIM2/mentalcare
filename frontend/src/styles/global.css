@@ -278,3 +278,40 @@ table.plain td.num { text-align: right; font-variant-numeric: tabular-nums; }
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 24px 26px; max-width: 460px; width: 100%; box-shadow: var(--shadow);
 }
+
+/* ---------- server status (sidebar) ---------- */
+.server-status {
+  display: block;
+  font-size: 0.8rem;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: var(--surface-2);
+}
+.server-status:hover { text-decoration: none; }
+.server-status i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--ok); }
+.server-status.down i { background: var(--danger); }
+.server-status.down { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
+.server-status small { display: block; color: var(--muted); font-size: 0.72rem; margin-top: 2px; }
+
+/* ---------- turn status (composer) ---------- */
+.turn-status { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+.turn-status i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--muted); }
+.turn-status.sending i, .turn-status.generating i { background: var(--accent); animation: blink 1s steps(2) infinite; }
+.turn-status.saved i, .turn-status.done i { background: var(--ok); }
+.turn-status.interrupted { color: var(--danger); }
+.turn-status.interrupted i { background: var(--danger); }
+
+/* ---------- context panel ---------- */
+.context-panel ul { margin: 4px 0 10px; padding-left: 18px; }
+.context-panel h3 { margin-top: 6px; }
+
+/* ---------- history filters ---------- */
+.filters-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.filters label.field { margin-bottom: 8px; }
+.tag.on { background: var(--accent); color: #fff; }
+
+/* ---------- shutdown overlay ---------- */
+.overlay-note { text-align: center; padding: 32px; }

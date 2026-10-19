@@ -2,6 +2,7 @@ package com.mentalcare.counseling;
 
 import com.mentalcare.common.ConflictException;
 import com.mentalcare.common.NotFoundException;
+import com.mentalcare.domain.Draft;
 import com.mentalcare.domain.Message;
 import com.mentalcare.domain.PromptVersion;
 import com.mentalcare.domain.Session;
@@ -9,6 +10,7 @@ import com.mentalcare.domain.SessionSummary;
 import com.mentalcare.domain.WeeklyCheckIn;
 import com.mentalcare.prompt.PromptLoader;
 import com.mentalcare.repository.CheckInRepository;
+import com.mentalcare.repository.DraftRepository;
 import com.mentalcare.repository.MessageRepository;
 import com.mentalcare.repository.PromptVersionRepository;
 import com.mentalcare.repository.SessionRepository;
@@ -34,7 +36,7 @@ public class SessionService {
 
     public record SessionDetail(Session session, WeeklyCheckIn checkIn, List<Message> messages,
                                 SessionSummary summary, List<String> tags, PromptVersion promptVersion,
-                                String importedMarkdown) {}
+                                String importedMarkdown, Draft draft) {}
 
     public record SessionListItem(Session session, SessionSummary summary, List<String> tags, WeeklyCheckIn checkIn) {}
 
@@ -48,11 +50,13 @@ public class SessionService {
     private final com.mentalcare.repository.ImportedArchiveRepository archives;
     private final SessionLocks locks;
     private final TransactionTemplate tx;
+    private final DraftRepository drafts;
 
     public SessionService(SessionRepository sessions, MessageRepository messages, CheckInRepository checkIns,
                           SummaryRepository summaries, TagRepository tags, PromptVersionRepository promptVersions,
                           PromptLoader prompts, com.mentalcare.repository.ImportedArchiveRepository archives,
-                          SessionLocks locks, TransactionTemplate tx) {
+                          SessionLocks locks, TransactionTemplate tx, DraftRepository drafts) {
+        this.drafts = drafts;
         this.archives = archives;
         this.locks = locks;
         this.tx = tx;
@@ -108,11 +112,38 @@ public class SessionService {
                 summaries.findBySession(id).orElse(null),
                 tags.findBySession(id),
                 pv,
-                session.isImported() ? archives.rawMarkdown(id).orElse(null) : null);
+                session.isImported() ? archives.rawMarkdown(id).orElse(null) : null,
+                session.isActive() ? drafts.find(id).orElse(null) : null);
+    }
+
+    /** Stores the composer text of an active session; blank text removes the draft. */
+    public void saveDraft(long id, String content) {
+        Session session = get(id);
+        if (!session.isActive()) {
+            throw new ConflictException("종료된 상담에는 초안을 저장할 수 없습니다.", id);
+        }
+        if (content == null || content.isBlank()) {
+            drafts.delete(id);
+        } else {
+            drafts.save(id, content);
+        }
+    }
+
+    public record SessionPage(List<SessionListItem> items, long total) {}
+
+    /** History list with optional keyword / date / tag filter. */
+    public SessionPage search(SessionRepository.Filter filter, int limit, int offset) {
+        boolean plain = filter == null || filter.isEmpty();
+        List<Session> page = plain ? sessions.findAll(limit, offset) : sessions.search(filter, limit, offset);
+        long total = plain ? sessions.count() : sessions.countMatching(filter);
+        return new SessionPage(items(page), total);
     }
 
     public List<SessionListItem> list(int limit, int offset) {
-        List<Session> page = sessions.findAll(limit, offset);
+        return items(sessions.findAll(limit, offset));
+    }
+
+    private List<SessionListItem> items(List<Session> page) {
         List<Long> ids = page.stream().map(Session::id).toList();
         Map<Long, SessionSummary> summaryById = summaries.findBySessions(ids);
         Map<Long, List<String>> tagsById = tags.findBySessions(ids);

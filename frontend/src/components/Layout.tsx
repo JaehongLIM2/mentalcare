@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import ServerStatus from './ServerStatus'
 
 const links = [
   { to: '/', label: '홈', end: true },
@@ -23,6 +24,7 @@ export default function Layout() {
           </NavLink>
         ))}
         <div className="sidebar-foot">
+          <ServerStatus />
           이 도구는 진료나 심리치료를 대체하지 않습니다. 긴급한 상황에서는 주변 사람이나 전문 기관에 연락하세요.
         </div>
       </aside>

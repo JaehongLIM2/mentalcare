@@ -10,6 +10,9 @@ public interface TurnListener {
     void onDelta(String text);
     void onDone(Message assistantMessage);
 
+    /** How much of the current session the model will see this turn (older messages are omitted first). */
+    default void onContext(int includedMessages, int omittedMessages) {}
+
     /**
      * @param userFacingMessage Korean explanation safe to show
      * @param kind              machine-readable kind (an {@code LlmException.Kind} name or "INTERNAL")

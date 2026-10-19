@@ -69,7 +69,7 @@
 |---|---|
 | 네트워크 | `server.address=127.0.0.1` 기본. Docker는 `127.0.0.1:8080:8080` 포트 매핑. `MENTALCARE_ALLOWED_HOSTS`를 바꾸지 않는 한 LAN 접근 불가. |
 | DNS rebinding / CSRF | `LocalRequestGuardFilter`: 경로에 매트릭스 구간(`;`)·백슬래시·인코딩된 구분자가 있으면 403(Spring이 `;…`를 떼고 라우팅하므로 원본 URI만 보던 검사의 우회 경로를 차단), Host가 loopback이 아니면 403, Origin이 loopback이 아니거나 `null`이면 403, `/api/*`에 `Sec-Fetch-Site: cross-site`면 403(OAuth callback GET 제외). CORS 미설정. |
-| 브라우저 하드닝 | CSP(`script-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'`), `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, COOP/CORP, `/api` 응답 `Cache-Control: no-store`. JSON 출력에서 `< > & '`를 `\uXXXX`로 이스케이프. |
+| 브라우저 하드닝 | CSP(`script-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'`), `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, COOP/CORP, `/api` 응답 `Cache-Control: no-store`. JSON 출력에서 `< > & '`를 `\uXXXX`로 이스케이프(그 외 문자는 그대로; 예전 버전은 비ASCII까지 이스케이프했으므로 검색은 두 표기를 모두 찾음). |
 | XSS | React가 모든 문자열을 텍스트로 렌더링. `dangerouslySetInnerHTML`/`innerHTML`/`eval` 사용 금지(정적 검사). AI 응답과 Markdown은 HTML로 해석하지 않음(평문 `white-space: pre-wrap`). |
 | 인증 (OpenAI) | Sign in with ChatGPT: 동적 등록(`dynamic_agent_client` → issued `client_id` 저장), Authorization Code + PKCE S256, `state`(상수시간 비교, 1회용, 10분 만료), `nonce`, ID 토큰 RS256/`iss`/`aud`/`exp`/`azp` 검증(JWKS는 discovery 문서에서), granted scope에 `chatgpt.tokens.use.direct`가 없으면 추론 차단, refresh token 회전, 로그아웃 시 revoke. |
 | Credential 저장 | `data/credentials/chatgpt-auth.json` — Windows: DPAPI(현재 사용자) / 그 외: AES-256-GCM(키 파일 `.master.key`, 0600). 상담 DB와 분리. 원자적 쓰기. 다른 provider가 쓴 파일은 덮어쓰지 않음. 토큰은 Markdown·SQLite·로그·프론트에 절대 저장/전달되지 않음. |
@@ -82,7 +82,11 @@
 | 실행 스크립트 | 시작/종료 스크립트는 **이 저장소의 jar 절대경로**를 명령줄에 가진 프로세스만 대상으로 함. 시작 절차는 저장소별 Mutex로 직렬화, PID 파일에 PID·포트·jar 경로를 기록하고 포트 응답 PID를 대조. |
 | 이관 중복 | 같은 내용(SHA-256)의 파일을 다시 가져오면 409. 이관 기억이 "반복 관찰"로 자동 확정되는 경로를 차단. |
 | 로깅 | 상담 원문·토큰·코드·URL·raw 요청/응답 본문을 로그하지 않음. 예외는 클래스명/종류/provider code만. 테스트가 센티넬 문자열로 로그 누출을 검증. |
-| 파일 시스템 | Markdown 경로 = `markdownDir/YYYY/YYYY-MM-DD[-id].md` (서버 생성). Import/업로드 기능 없음. DB는 `data-dir` 내부 고정. |
+| 파일 시스템 | Markdown 경로 = `markdownDir/YYYY/YYYY-MM-DD[-id].md` (서버 생성). 업로드는 이관 Markdown(2MB)과 백업 zip뿐이며 서버가 임의 경로를 읽거나 쓰지 않음. DB는 `data-dir` 내부 고정. |
+| 백업/복원 | 백업 = `VACUUM INTO` 스냅샷 + Markdown + manifest를 zip으로(자격증명은 opt-in, 암호화된 파일 그대로). 복원은 전역 유지보수 잠금 아래에서만: zip 항목 이름 allow-list(`..`·절대경로·백슬래시 거부, 항목 수·크기 상한), manifest 형식/버전 검사, 추출된 DB에 `PRAGMA integrity_check`·필수 테이블 확인 후 **복원 전 스냅샷**을 `data/backups/`에 쓰고, 테이블을 한 트랜잭션에서 행 단위로 교체(라이브 DB 파일 교체·커넥션 풀 재시작 없음). Markdown은 `markdownDir` 안으로만 쓰고 요약의 경로를 재연결. 자격증명 복원은 파일명 allow-list와 JSON 형태 검사 후 원자적 쓰기. |
+| 초안 | 작성 중 텍스트는 브라우저 저장소가 아니라 상담 DB의 `drafts` 테이블(세션당 1건)에 저장. 전송·종료·삭제 시 제거. 컨텍스트·로그·Markdown에는 포함되지 않음. |
+| 응답 재시도 | `retry`는 저장된 사용자 메시지를 재사용하고 중간에 끊긴 부분 응답은 FAILED로 퇴역(모델·화면 모두에서 제외). 이미 답변이 있으면 생성하지 않음. 안전 등급은 저장된 값을 재사용. |
+| 종료 버튼 | `POST /api/system/shutdown`에 `{"ifIdle":true}`를 보내는 앱 내 종료는 응답 생성·데이터 작업 중이면 409. 스크립트는 기존대로 본문 없이 호출. 상태 엔드포인트는 PID/시작 시각/포트/데이터 폴더만 노출(상담 데이터 없음). |
 | SQL | 모든 쿼리 `JdbcClient` named parameter 바인딩. 동적 SQL 조립 없음. enum/정규식으로 입력 검증. |
 | 의존성 | Spring Boot 3.5.16, sqlite-jdbc 3.53.4.0, nimbus-jose-jwt 10.10, jna-platform 5.19.1; vite 7, react-router 7(알려진 취약점 해결). 미사용 의존성 없음. |
 | Docker | multi-stage, non-root(uid 1000), read-only rootfs, `cap_drop: ALL`, `no-new-privileges`, `.dockerignore`로 data/.env/*.db/archive 제외, build arg로 비밀 주입 없음. |
@@ -139,6 +143,11 @@
 - 공격 경로/원인: 관용 표현 과대 분류 또는 명백한 위험 누락.
 - 대응: 2단계(신호 → 문맥 평가), 보수적 fallback, 테스트.
 - 잔여: 의학적으로 검증된 시스템이 아님. 긴급 상황에서는 앱이 아니라 전문 기관에 연락해야 함(UI에 상시 표시).
+
+### R11. 백업 파일 유출 — **Medium (잔여: Medium, 사용자 보관 책임)**
+백업 zip에는 상담 원문·요약·기억이 평문으로 들어 있습니다(DB 스냅샷). 자격증명은 기본 제외이고 포함해도 암호화 상태지만, 파일 자체는 암호화되지 않습니다.
+대응: UI가 "다른 저장 장치/클라우드에 옮겨 두라"고 안내하고 자격증명 포함을 opt-in으로 둠. 백업 zip 자체의 암호화(비밀번호)는 Phase 3 후보.
+복원은 현재 데이터를 통째로 바꾸므로 확인 모달 + `confirmation=RESTORE` + 복원 전 스냅샷으로 실수를 되돌릴 수 있게 함.
 
 ### R10. `OPENAI_AUTH_MODE=api-key` 개발자 모드 — **Low**
 - 대응: 기본값 아님, 명시적 설정 필요, UI에 과금 경고 표시, 자동 fallback 없음.

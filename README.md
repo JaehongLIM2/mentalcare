@@ -36,6 +36,7 @@ Browser (React/Vite, 127.0.0.1) ──HTTP/SSE──► Spring Boot (127.0.0.1:8
                                                 ├─ safety/      Moderation + 키워드 신호 → 구조화된 위기 평가
                                                 ├─ memory/      CANDIDATE → ACTIVE → ARCHIVED
                                                 ├─ export/      SessionSummary JSON → Markdown
+                                                ├─ backup/      zip 백업(VACUUM INTO 스냅샷 + Markdown) / 트랜잭션 복원
                                                 ├─ prompt/      resources/prompts/*-vN.md, 버전 추적
                                                 ├─ ai/          LlmClient 인터페이스, ModelCatalogService ── ai/openai/ 구현
                                                 └─ repository/  Spring JdbcClient → SQLite
@@ -53,6 +54,8 @@ Browser (React/Vite, 127.0.0.1) ──HTTP/SSE──► Spring Boot (127.0.0.1:8
 4. `POST /api/sessions/{id}/messages` (SSE) – 사용자 메시지 **먼저 저장** → 안전 평가 → 컨텍스트 구성 → 스트리밍 응답 → 응답 저장
 5. `POST /api/sessions/{id}/complete` – 요약 모델이 Structured Output(strict JSON Schema)으로 요약 → 태그/기억 후보 저장 → Markdown 생성 → COMPLETED
 6. 다음 상담의 컨텍스트 = 시스템 프롬프트 + 프로필 + ACTIVE 기억 + 최근 요약 N회 + 이번 체크인 + 현재 대화
+   (`GET /api/sessions/{id}/context`로 같은 선택 결과를 화면에서 확인 가능)
+7. 응답이 끊기면 `POST /api/sessions/{id}/retry` – 저장된 사용자 메시지를 재사용해 답변만 다시 생성(중복 저장 없음)
 
 ## 기술 스택
 
@@ -118,14 +121,15 @@ docker compose up --build
 ### 4. 테스트
 
 ```
-cd backend  && mvn test                 # 93 tests
+cd backend  && mvn test                 # 109 tests
 cd frontend && npm run typecheck && npm run test:security && npm run build && npm audit
 ```
 
 OpenAI 호출은 `LlmClient` 인터페이스 뒤에 있으므로 테스트는 네트워크 없이 Fake/Mock으로 실행됩니다.
 포함: 컨텍스트 구성(데이터 블록·경로/자격증명 미포함), 메모리 병합·승격, 세션 종료, Structured Output 파싱, SSE 파싱,
 Markdown 생성·경로 안전, 위기 라우팅(관용 표현 vs 명시적 위험), OAuth(state/nonce 불일치, 만료 토큰, refresh 실패,
-플랜 권한 없음, 플랜 한도), 로컬 가드(DNS rebinding/CSRF), 보안 헤더, XSS/SQLi 문자열, 로그 누출 검사.
+플랜 권한 없음, 플랜 한도), 로컬 가드(DNS rebinding/CSRF), 보안 헤더, XSS/SQLi 문자열, 로그 누출 검사,
+초안 저장/정리, 응답 재시도(중복 저장 없음·부분 응답 퇴역), 기록 검색(키워드·기간·태그·LIKE 이스케이프), 백업/복원(zip-slip·손상 DB 거부, 복원 전 스냅샷, 작업 중 409), 실행 상태/종료 보호.
 
 ## Sign in with ChatGPT
 
@@ -185,7 +189,21 @@ open-source/self-hosted 흐름을 Java로 구현했습니다. 공식 SDK(`@siwc/
 | OAuth credential | `data/credentials/` | `MENTALCARE_CREDENTIALS_DIR` |
 | Docker | 호스트 `./data` ↔ 컨테이너 `/data` | `docker-compose.yml` volumes |
 
-`data/`, `*.db`, `.env`는 `.gitignore`와 `.dockerignore`에 포함되어 있습니다. 백업은 `data/` 폴더를 통째로 복사하면 됩니다(암호화된 토큰과 키 파일이 함께 포함되니 백업도 안전하게 보관).
+`data/`, `*.db`, `.env`는 `.gitignore`와 `.dockerignore`에 포함되어 있습니다.
+
+## 백업과 복원
+
+설정 → **백업과 복원**에서 zip 파일 하나로 내려받고(마지막 백업 시각이 표시됨), 같은 화면에서 되돌릴 수 있습니다.
+
+| 항목 | 내용 |
+|---|---|
+| 파일 구성 | `manifest.json`(형식·버전·시각·건수), `mentalcare.db`(`VACUUM INTO`로 만든 일관된 스냅샷: 대화·요약·기억·설정 포함), `sessions/**/*.md` |
+| 자격증명 | 기본 **제외**. 체크하면 `credentials/`에 암호화된 파일 그대로 포함(DPAPI는 같은 Windows 사용자에서만 복호화 가능). 평문 토큰은 어디에도 없음 |
+| 복원 절차 | 업로드 → 검사(`POST /api/backup/inspect`: manifest, zip 경로 안전성, `PRAGMA integrity_check`, 필수 테이블) → 확인 모달 → `POST /api/backup/restore` (`confirmation=RESTORE`) |
+| 복원 방식 | 전역 잠금 아래에서 **복원 전 스냅샷**을 `data/backups/before-restore-*.zip`으로 먼저 저장(최근 5개 보관) → 테이블을 트랜잭션 안에서 행 단위로 교체(DB 파일 교체 없음) → Markdown 폴더 교체 → 요약의 Markdown 경로를 이 PC 기준으로 재연결 |
+| 거부되는 경우 | 응답 생성·종료·가져오기 진행 중(409), 손상된 zip/DB, `..`·절대경로 항목, 더 새로운 형식 버전 |
+
+`data/` 폴더를 통째로 복사해 두는 방식도 여전히 유효합니다(암호화된 토큰과 키 파일이 함께 포함되니 안전하게 보관).
 
 ## OpenAI 설정
 
@@ -289,9 +307,10 @@ React UI · Spring Boot · SQLite · Responses API 스트리밍 상담 · Check-
 **Phase 1.5 (완료)** – Sign in with ChatGPT(플랜 사용), 모델 discovery, Docker, 보안 감사(로컬 가드·CSP·credential 암호화·prompt injection 경계·로그 감사·의존성 갱신)
 
 **Phase 2** – 실제 사용 후 필요가 확인되면
-Semantic Search / Embedding(SQLite 내 저장으로 충분한지 먼저 평가) · 관련 과거 상담 검색 · Memory 승격 로직 고도화 · 프롬프트 버전 개선 ·
-통계/그래프 개선 · 백업/복구 · 비용 통계 · 상담 검색 · 로컬 PIN
-(완료: ChatGPT 이관 기록 Markdown Import, 데이터 삭제, Windows 백그라운드 실행)
+Semantic Search / Embedding(SQLite 내 저장으로 충분한지 먼저 평가) · Memory 승격 로직 고도화 · 프롬프트 버전 개선 ·
+통계/그래프 개선 · 비용 통계 · 로컬 PIN
+(완료: ChatGPT 이관 기록 Markdown Import, 데이터 삭제, Windows 백그라운드 실행, 앱 내 백업/복원, 작성 중 초안 자동 복구,
+저장 상태 표시·응답 재시도, 상담 기록 검색·필터, 참고 맥락 보기, 앱 실행 상태·종료 버튼)
 
 **Phase 3** – 실제 필요가 생겼을 때만
 PWA · 모바일 최적화 · 음성 상담 · Local LLM · 상담 데이터 at-rest 암호화 · 자동 주간 알림
