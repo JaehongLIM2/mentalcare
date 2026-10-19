@@ -315,3 +315,30 @@ table.plain td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ---------- shutdown overlay ---------- */
 .overlay-note { text-align: center; padding: 32px; }
+
+/* ---------- session page: fixed header, own scroll area for the conversation, composer at the bottom ---------- */
+.main:has(.session-page) { padding-top: 16px; padding-bottom: 16px; }
+.session-page { display: flex; flex-direction: column; height: calc(100dvh - 32px); min-height: 420px; }
+.session-head { flex: none; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.session-head .alert { margin: 10px 0 0; }
+.session-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.session-title h1 { font-size: 1.2rem; margin: 0; }
+.session-head .context-panel { max-height: 38vh; overflow-y: auto; margin: 10px 0 0; }
+.chat-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 6px 0 2px; }
+.chat-scroll .chat { padding: 16px 0 12px; }
+.new-below { position: sticky; bottom: 8px; display: block; margin: 0 auto; box-shadow: var(--shadow); }
+.session-notices { flex: none; max-height: 28vh; overflow-y: auto; }
+.session-notices .alert { margin: 8px 0 0; }
+.session-page .composer { position: static; flex: none; background: none; border-top: 1px solid var(--border); padding: 10px 0 0; margin-top: 8px; }
+.composer-row { display: flex; gap: 10px; align-items: stretch; }
+.composer-row textarea { flex: 1 1 auto; min-height: 64px; max-height: 220px; }
+.composer-row .send { flex: none; min-width: 92px; justify-content: center; }
+.composer-meta { margin-top: 6px; }
+@media (max-width: 820px) {
+  .session-page { height: calc(100dvh - 24px); }
+  .composer-row .send { min-width: 72px; padding: 9px 10px; }
+}
+
+/* the conversation screen is centred in the space next to the sidebar */
+.main:has(.session-page) { margin-inline: auto; }
+.composer-meta { line-height: 1.5; }

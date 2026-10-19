@@ -58,14 +58,51 @@ export default function SessionPage() {
   const [outline, setOutline] = useState<ContextOutline | null>(null)
   const [showContext, setShowContext] = useState(false)
   const openingStarted = useRef(false)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const chatRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef(input)
   const doneTimer = useRef<number | null>(null)
   const showContextRef = useRef(showContext)
   inputRef.current = input
   showContextRef.current = showContext
 
-  const scrollDown = () => bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  // ---------------------------------------------------------------- scrolling (the conversation has its own scroll area)
+  // Follow new text only while the reader is at the bottom; reading further up is never interrupted.
+  const stickToBottom = useRef(true)
+  const autoScrollUntil = useRef(0)
+  const scrollFrame = useRef<number | null>(null)
+  const initialScrolled = useRef(false)
+  const [newBelow, setNewBelow] = useState(false)
+
+  const nearBottom = () => {
+    const el = chatRef.current
+    return !el || el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }
+  const onChatScroll = () => {
+    if (Date.now() < autoScrollUntil.current && !nearBottom()) return // our own smooth scroll is still moving
+    stickToBottom.current = nearBottom()
+    if (stickToBottom.current) setNewBelow(false)
+  }
+  const scrollToBottom = useCallback((smooth: boolean) => {
+    const el = chatRef.current
+    if (!el) return
+    stickToBottom.current = true
+    setNewBelow(false)
+    if (smooth) {
+      autoScrollUntil.current = Date.now() + 700
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    } else {
+      el.scrollTop = el.scrollHeight
+    }
+  }, [])
+  /** At most one instant scroll per frame while text streams in (no stacked smooth animations). */
+  const followFrame = useCallback(() => {
+    if (scrollFrame.current !== null) return
+    scrollFrame.current = window.requestAnimationFrame(() => {
+      scrollFrame.current = null
+      const el = chatRef.current
+      if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
+    })
+  }, [])
 
   // ---------------------------------------------------------------- draft autosave (local backend, never browser storage)
   const [draftFailing, setDraftFailing] = useState(false)
@@ -194,7 +231,6 @@ export default function SessionPage() {
       } else {
         setPhase('idle')
       }
-      scrollDown()
     },
     [loadOutline, reconcile],
   )
@@ -235,9 +271,40 @@ export default function SessionPage() {
     }
   }, [sessionId, navigate, runTurn])
 
+  // a message was added (sent, answered or loaded)
   useEffect(() => {
-    scrollDown()
-  }, [messages.length, streamingText])
+    if (messages.length === 0) return
+    if (!initialScrolled.current) {
+      initialScrolled.current = true
+      scrollToBottom(false)
+      return
+    }
+    const last = messages[messages.length - 1]
+    if (stickToBottom.current || last.role === 'USER') scrollToBottom(true) // your own message always comes into view
+    else setNewBelow(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length])
+
+  // the reply is streaming in
+  useEffect(() => {
+    if (streamingText === null) return
+    if (stickToBottom.current) followFrame()
+    else if (streamingText) setNewBelow(true)
+  }, [streamingText, followFrame])
+
+  // the visible area changed size (notices appeared, the window was resized): stay pinned to the bottom
+  useEffect(() => {
+    const el = chatRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      if (stickToBottom.current) el.scrollTop = el.scrollHeight
+    })
+    ro.observe(el)
+    return () => {
+      ro.disconnect()
+      if (scrollFrame.current !== null) window.cancelAnimationFrame(scrollFrame.current)
+    }
+  }, [detail])
 
   const send = async () => {
     const text = input.trim()
@@ -304,27 +371,31 @@ export default function SessionPage() {
   const visible = messages.filter((m) => m.status !== 'FAILED')
 
   return (
-    <div>
-      <div className="spread page-head">
-        <div>
-          <h1>상담 중</h1>
-          <p>
-            {detail?.session.date} · 세션 #{sessionId}
-            {detail?.checkIn && ' · 체크인 완료'}
-          </p>
+    <div className="session-page">
+      <div className="session-head">
+        <div className="spread">
+          <div className="session-title">
+            <h1>상담 중</h1>
+            <span className="muted small">
+              {detail?.session.date} · 세션 #{sessionId}
+              {detail?.checkIn && ' · 체크인 완료'}
+            </span>
+          </div>
+          <div className="row">
+            <Link className="btn sm" to="/">홈</Link>
+            <button className="btn sm" onClick={() => setShowContext((v) => !v)} aria-expanded={showContext}>
+              {showContext ? '참고 맥락 닫기' : '참고 맥락 보기'}
+            </button>
+            <button className="btn sm" onClick={() => setConfirmDelete(true)} disabled={busy || completing}>
+              기록 없이 삭제
+            </button>
+            <button className="btn danger" onClick={complete} disabled={busy || completing}>
+              {completing ? '기록을 정리하는 중…' : '상담 종료'}
+            </button>
+          </div>
         </div>
-        <div className="row">
-          <Link className="btn sm" to="/">홈</Link>
-          <button className="btn sm" onClick={() => setShowContext((v) => !v)} aria-expanded={showContext}>
-            {showContext ? '참고 맥락 닫기' : '참고 맥락 보기'}
-          </button>
-          <button className="btn danger" onClick={complete} disabled={busy || completing}>
-            {completing ? '기록을 정리하는 중…' : '상담 종료'}
-          </button>
-          <button className="btn sm" onClick={() => setConfirmDelete(true)} disabled={busy || completing}>
-            기록 없이 삭제
-          </button>
-        </div>
+        {showContext && <ContextPanel outline={outline} onRefresh={loadOutline} />}
+        <SafetyBanner level={risk} crisisFlag={detail?.session.crisisFlag ?? false} />
       </div>
 
       {confirmDelete && (
@@ -337,85 +408,92 @@ export default function SessionPage() {
         />
       )}
 
-      {showContext && <ContextPanel outline={outline} onRefresh={loadOutline} />}
+      <div className="chat-scroll" ref={chatRef} onScroll={onChatScroll}>
+        <div className="chat">
+          {visible.map((m) => (
+            <ChatMessage key={m.id} role={m.role} content={m.content} createdAt={m.createdAt} status={m.status} />
+          ))}
+          {streamingText !== null && <ChatMessage role="ASSISTANT" content={streamingText || '…'} streaming />}
+        </div>
+        {newBelow && (
+          <button className="btn sm new-below" onClick={() => scrollToBottom(true)}>
+            새 내용 ↓
+          </button>
+        )}
+      </div>
 
-      <SafetyBanner level={risk} crisisFlag={detail?.session.crisisFlag ?? false} />
-      {omitted > 0 && (
-        <div className="alert warn" role="status">
-          상담이 길어져 앞부분 메시지 {omitted}개는 상담자에게 전달되지 않습니다. 중요한 내용이면 다시 한 번 언급해 주세요.
-        </div>
-      )}
-      {error && (
-        <div className="alert error">
-          {error}
-          {errorKind === 'PLAN_LIMIT' && (
-            <div style={{ marginTop: 6 }}>
-              <a className="btn sm" href={CHATGPT_USAGE_URL} target="_blank" rel="noreferrer noopener">Manage usage</a>
-            </div>
-          )}
-          {(errorKind === 'NOT_CONNECTED' || errorKind === 'AUTH_REQUIRED' || errorKind === 'NO_PLAN_USAGE') && (
-            <div style={{ marginTop: 6 }}>
-              <Link className="btn sm" to="/settings">설정에서 ChatGPT 연결</Link>
-            </div>
-          )}
-        </div>
-      )}
-      {canRetry && !busy && (
-        <div className="alert warn">
-          답변을 받지 못했습니다. 보낸 메시지는 서버에 저장되어 있으므로 다시 보낼 필요 없이 답변만 다시 요청할 수 있습니다.
-          <div style={{ marginTop: 6 }}>
+      <div className="session-notices">
+        {omitted > 0 && (
+          <div className="alert warn" role="status">
+            상담이 길어져 앞부분 메시지 {omitted}개는 상담자에게 전달되지 않습니다. 중요한 내용이면 다시 한 번 언급해 주세요.
+          </div>
+        )}
+        {error && (
+          <div className="alert error">
+            {error}
+            {errorKind === 'PLAN_LIMIT' && (
+              <div style={{ marginTop: 6 }}>
+                <a className="btn sm" href={CHATGPT_USAGE_URL} target="_blank" rel="noreferrer noopener">Manage usage</a>
+              </div>
+            )}
+            {(errorKind === 'NOT_CONNECTED' || errorKind === 'AUTH_REQUIRED' || errorKind === 'NO_PLAN_USAGE') && (
+              <div style={{ marginTop: 6 }}>
+                <Link className="btn sm" to="/settings">설정에서 ChatGPT 연결</Link>
+              </div>
+            )}
+          </div>
+        )}
+        {canRetry && !busy && (
+          <div className="alert warn">
+            답변을 받지 못했습니다. 보낸 메시지는 서버에 저장되어 있으므로 다시 보낼 필요 없이 답변만 다시 요청할 수 있습니다.{' '}
             <button className="btn primary sm" onClick={retry}>답변 다시 요청</button>
           </div>
-        </div>
-      )}
-      {draftNotice && (
-        <div className="alert info">
-          {draftNotice}{' '}
-          <button className="btn sm" onClick={() => setDraftNotice(null)}>확인</button>
-        </div>
-      )}
-      {endHint && !busy && (
-        <div className="alert info">
-          오늘 상담을 마치려면 오른쪽 위의 <b>상담 종료</b> 버튼을 누르세요. 요약과 Markdown 기록이 생성됩니다.
-        </div>
-      )}
-
-      <div className="chat">
-        {visible.map((m) => (
-          <ChatMessage key={m.id} role={m.role} content={m.content} createdAt={m.createdAt} status={m.status} />
-        ))}
-        {streamingText !== null && <ChatMessage role="ASSISTANT" content={streamingText || '…'} streaming />}
-        <div ref={bottomRef} />
+        )}
+        {draftNotice && (
+          <div className="alert info">
+            {draftNotice}{' '}
+            <button className="btn sm" onClick={() => setDraftNotice(null)}>확인</button>
+          </div>
+        )}
+        {endHint && !busy && (
+          <div className="alert info">
+            오늘 상담을 마치려면 위쪽의 <b>상담 종료</b> 버튼을 누르세요. 요약과 Markdown 기록이 생성됩니다.
+          </div>
+        )}
       </div>
 
       <div className="composer">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={onKey}
-          placeholder="이번 주 이야기하고 싶은 것을 편하게 적어 주세요. (Ctrl+Enter 전송)"
-          disabled={busy || completing}
-          rows={3}
-        />
-        <div className="spread">
-          <span className="muted small">
-            {phase !== 'idle' && (
+        <div className="composer-row">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onKey}
+            placeholder="이번 주 이야기하고 싶은 것을 편하게 적어 주세요. (Ctrl+Enter 전송)"
+            disabled={busy || completing}
+            rows={3}
+          />
+          <button className="btn primary send" onClick={send} disabled={busy || completing || !input.trim()}>
+            {busy ? (phase === 'sending' ? '전송 중…' : '생성 중…') : '보내기'}
+          </button>
+        </div>
+        <div className="muted small composer-meta">
+          {/* the first line shows the turn status while a reply is on its way, so the height never changes */}
+          <div>
+            {phase !== 'idle' ? (
               <span className={'turn-status ' + phase} role="status">
                 <i />
                 {PHASE_LABEL[phase]}
               </span>
+            ) : (
+              '· 상담자는 진단하지 않으며, 당신이 생각을 정리하도록 돕는 역할만 합니다.'
             )}
-            {phase === 'idle' && (
-              <>
-                상담자는 진단하지 않으며, 당신이 생각을 정리하도록 돕는 역할만 합니다.
-                {' · '}{draftFailing ? <b style={{ color: 'var(--warn)' }}>초안 자동 저장 실패 · 다시 시도 중</b> : '작성 중인 글은 이 PC에 자동 저장됩니다.'}
-              </>
-            )}
-            {' · '}Using ChatGPT plan · <a href={CHATGPT_USAGE_URL} target="_blank" rel="noreferrer noopener">Manage usage</a>
-          </span>
-          <button className="btn primary" onClick={send} disabled={busy || completing || !input.trim()}>
-            {busy ? (phase === 'sending' ? '전송 중…' : '답변 생성 중…') : '보내기'}
-          </button>
+          </div>
+          <div>
+            {draftFailing ? <b style={{ color: 'var(--warn)' }}>· 초안 자동 저장 실패 · 다시 시도 중</b> : '· 작성 중인 글은 이 PC에 자동 저장됩니다.'}
+          </div>
+          <div>
+            · Using ChatGPT plan · <a href={CHATGPT_USAGE_URL} target="_blank" rel="noreferrer noopener">Manage usage</a>
+          </div>
         </div>
       </div>
     </div>

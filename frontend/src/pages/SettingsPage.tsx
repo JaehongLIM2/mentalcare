@@ -34,6 +34,8 @@ export default function SettingsPage() {
     utilityModel: '',
   })
   const [busy, setBusy] = useState(false)
+  const [profileBusy, setProfileBusy] = useState(false)
+  const [profileSaved, setProfileSaved] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmWipe, setConfirmWipe] = useState(false)
@@ -100,6 +102,25 @@ export default function SettingsPage() {
       setBusy(false)
     }
   }
+
+  /** Saves only profile and goals; unsaved edits in the other cards stay as they are. */
+  const saveProfile = async () => {
+    setProfileBusy(true)
+    setProfileSaved(false)
+    setError(null)
+    try {
+      const s = await api.updateSettings({ profileSummary: form.profileSummary, goals: form.goals })
+      setSettings(s)
+      setForm((f) => ({ ...f, profileSummary: s.profileSummary, goals: s.goals }))
+      setProfileSaved(true)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setProfileBusy(false)
+    }
+  }
+
+  const profileDirty = settings !== null && (form.profileSummary !== settings.profileSummary || form.goals !== settings.goals)
 
   const pickImport = async (file: File | null) => {
     setImportFile(file)
@@ -266,6 +287,13 @@ export default function SettingsPage() {
           <span>현재 유지 중인 상담 목표 (한 줄에 하나)</span>
           <textarea rows={3} value={form.goals} onChange={(e) => setForm({ ...form, goals: e.target.value })} />
         </label>
+        <div className="row">
+          <button className="btn primary" onClick={saveProfile} disabled={profileBusy || !profileDirty}>
+            {profileBusy ? '저장 중…' : '프로필과 목표 저장'}
+          </button>
+          {profileDirty && !profileBusy && <span className="small" style={{ color: 'var(--warn)' }}>저장되지 않은 변경이 있습니다</span>}
+          {profileSaved && !profileDirty && <span className="muted small">저장되었습니다. 다음 답변부터 상담자가 참고합니다.</span>}
+        </div>
       </div>
 
       <div className="card">
