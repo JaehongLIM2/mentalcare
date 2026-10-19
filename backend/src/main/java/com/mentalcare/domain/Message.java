@@ -13,5 +13,12 @@ public record Message(
         String content,
         MessageStatus status,
         RiskLevel riskLevel,
-        Instant createdAt
-) {}
+        Instant createdAt,
+        /** true when the safety assessment for this (user) message could not be done */
+        boolean safetyUnavailable
+) {
+    public Message(long id, long sessionId, MessageRole role, String content, MessageStatus status,
+                   RiskLevel riskLevel, Instant createdAt) {
+        this(id, sessionId, role, content, status, riskLevel, createdAt, false);
+    }
+}

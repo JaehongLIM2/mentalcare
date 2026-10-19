@@ -103,14 +103,17 @@ public class SafetyService {
         } catch (LlmException e) {
             if (screening) {
                 // nothing pointed at risk and we could not look closer: keep counseling going, leave a trace
-                log.warn("Safety screen unavailable ({}) session={} message={}; no signal, keeping NONE",
+                log.warn("Safety screen unavailable ({}) session={} message={}; no signal, counseling continues unchecked",
                         e.kind(), session.id(), userMessage.id());
-                recordEvent(session.id(), userMessage.id(), null, false, RiskLevel.NONE, "screening unavailable: " + e.kind());
-                return SafetyDecision.none(session.crisisFlag());
+                String why = "screening unavailable: " + e.kind();
+                recordUnavailable(session.id(), userMessage.id(), false, why);
+                return SafetyDecision.unavailable(session.crisisFlag(), why);
             }
             log.warn("Crisis assessment unavailable ({}); falling back to conservative ELEVATED", e.kind());
-            level = RiskLevel.ELEVATED;
-            reason = "assessment unavailable: " + e.kind();
+            String why = "assessment unavailable: " + e.kind();
+            recordUnavailable(session.id(), userMessage.id(), keywordHit, why);
+            SafetyMode mode = SafetyMode.CAUTION; // a signal was there and could not be ruled out
+            return new SafetyDecision(RiskLevel.ELEVATED, mode, why, true);
         }
 
         if (screening && level == RiskLevel.NONE) {
@@ -165,6 +168,14 @@ public class SafetyService {
         }
         sb.append("마지막 [사용자] 메시지를 중심으로 현재 위험 수준을 판단하세요.");
         return sb.toString();
+    }
+
+    private void recordUnavailable(long sessionId, long messageId, boolean keywordHit, String reason) {
+        try {
+            events.insert(sessionId, messageId, false, null, keywordHit, SafetyEventRepository.UNAVAILABLE, reason);
+        } catch (RuntimeException e) {
+            log.warn("Could not record safety event: {}", e.getClass().getSimpleName());
+        }
     }
 
     private void recordEvent(long sessionId, long messageId, ModerationSignal moderation, boolean keywordHit,

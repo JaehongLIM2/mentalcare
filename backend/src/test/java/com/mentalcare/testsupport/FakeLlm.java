@@ -23,6 +23,9 @@ public class FakeLlm implements LlmClient {
     public RuntimeException summaryFailure;
     public RuntimeException streamFailure;
     public String crisisLevel = "NONE";
+    /** When set, moderation / crisis assessment throw these (simulates an unsupported route, a timeout…). */
+    public RuntimeException moderationFailure;
+    public RuntimeException assessmentFailure;
     /** When set, streaming blocks until the latch opens (lets tests overlap turns). */
     public volatile java.util.concurrent.CountDownLatch gate;
     public List<ModelInfo> models = List.of(new ModelInfo("gpt-6.1-sol", "GPT-6.1 Sol"), new ModelInfo("gpt-6-luna", "GPT-6 Luna"));
@@ -47,6 +50,8 @@ public class FakeLlm implements LlmClient {
         summaryFailure = null;
         streamFailure = null;
         crisisLevel = "NONE";
+        moderationFailure = null;
+        assessmentFailure = null;
         summary = defaultSummary();
     }
 
@@ -74,11 +79,13 @@ public class FakeLlm implements LlmClient {
 
     @Override
     public LlmResult<CrisisAssessmentOutput> assessCrisis(String model, String instructions, String recentConversation) {
+        if (assessmentFailure != null) throw assessmentFailure;
         return new LlmResult<>(new CrisisAssessmentOutput(crisisLevel, "test", "test"), LlmUsage.none("fake-counsel"));
     }
 
     @Override
     public ModerationSignal moderate(String text) {
+        if (moderationFailure != null) throw moderationFailure;
         return ModerationSignal.none();
     }
 

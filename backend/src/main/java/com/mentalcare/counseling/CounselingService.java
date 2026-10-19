@@ -123,6 +123,10 @@ public class CounselingService {
                 messages.updateRisk(userMessage.id(), decision.riskLevel());
                 listener.onSafety(decision.riskLevel());
             }
+            if (decision.unavailable()) {
+                messages.markSafetyUnavailable(userMessage.id());
+                listener.onSafetyUnavailable();
+            }
             if (decision.riskLevel() == RiskLevel.IMMINENT && !session.crisisFlag()) {
                 sessions.setCrisisFlag(sessionId, true);
                 session = sessionService.get(sessionId);

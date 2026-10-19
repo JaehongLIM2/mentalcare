@@ -23,7 +23,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Streaming endpoints. Events: user_saved, safety, context, delta, done, error.
+ * Streaming endpoints. Events: user_saved, safety, safety_unavailable, context, delta, done, error.
  * The counseling turn keeps running (and is persisted) even if the browser disconnects.
  */
 @RestController
@@ -91,6 +91,7 @@ public class MessageStreamController {
 
         @Override public void onUserSaved(Message m) { send("user_saved", Map.of("messageId", m.id())); }
         @Override public void onSafety(RiskLevel level) { send("safety", Map.of("riskLevel", level.name())); }
+        @Override public void onSafetyUnavailable() { send("safety_unavailable", Map.of("unavailable", true)); }
         @Override public void onContext(int included, int omitted) { send("context", Map.of("includedMessages", included, "omittedMessages", omitted)); }
         @Override public void onDelta(String text) { send("delta", Map.of("text", text)); }
         @Override public void onDone(Message m) { send("done", MessageDto.of(m)); }

@@ -24,7 +24,8 @@ public class MessageRepository {
             rs.getString("content"),
             MessageStatus.valueOf(rs.getString("status")),
             rs.getString("risk_level") == null ? null : RiskLevel.valueOf(rs.getString("risk_level")),
-            instant(rs, "created_at"));
+            instant(rs, "created_at"),
+            "UNAVAILABLE".equals(rs.getString("safety_status")));
 
     private final JdbcClient jdbc;
 
@@ -62,6 +63,11 @@ public class MessageRepository {
     public void updateStatus(long id, MessageStatus status) {
         jdbc.sql("UPDATE messages SET status = :status WHERE id = :id")
                 .param("status", status.name()).param("id", id).update();
+    }
+
+    /** The safety assessment for this message could not be done. */
+    public void markSafetyUnavailable(long id) {
+        jdbc.sql("UPDATE messages SET safety_status = 'UNAVAILABLE' WHERE id = :id").param("id", id).update();
     }
 
     public void updateRisk(long id, RiskLevel risk) {

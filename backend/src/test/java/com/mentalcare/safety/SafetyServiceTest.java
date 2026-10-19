@@ -31,6 +31,8 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.*;
 
 class SafetyServiceTest {
@@ -238,10 +240,12 @@ class SafetyServiceTest {
 
         SafetyDecision d = service.evaluate(SESSION, m, List.of(m));
 
-        assertThat(d.riskLevel()).isEqualTo(RiskLevel.NONE);
+        assertThat(d.unavailable()).as("not checked is not the same as no risk").isTrue();
+        assertThat(d.riskLevel()).isEqualTo(RiskLevel.NONE);   // routing only: no crisis mode on a timeout
         assertThat(d.mode()).isEqualTo(SafetyMode.NORMAL);
-        verify(events).insert(eq(1L), eq(10L), eq(false), any(), eq(false), eq(RiskLevel.NONE),
+        verify(events).insert(eq(1L), eq(10L), eq(false), any(), eq(false), eq("UNAVAILABLE"),
                 org.mockito.ArgumentMatchers.contains("screening unavailable: TIMEOUT"));
+        verify(events, never()).insert(anyLong(), any(), anyBoolean(), any(), anyBoolean(), any(RiskLevel.class), any());
     }
 
     @Test
@@ -254,6 +258,16 @@ class SafetyServiceTest {
 
         assertThat(d.riskLevel()).isEqualTo(RiskLevel.ELEVATED);
         assertThat(d.mode()).isEqualTo(SafetyMode.CAUTION);
+        assertThat(d.unavailable()).isTrue();
+        verify(events).insert(eq(1L), eq(10L), eq(false), any(), eq(true), eq("UNAVAILABLE"), any());
+    }
+
+    @Test
+    void successfulScreensAreNotFlaggedUnavailable() {
+        when(llm.moderate(anyString())).thenThrow(new LlmException(LlmException.Kind.ROUTE_NOT_SUPPORTED, "x"));
+        when(llm.assessCrisis(anyString(), anyString(), anyString())).thenReturn(assessed("NONE"));
+        Message m = user("오늘은 괜찮아요");
+        assertThat(service.evaluate(SESSION, m, List.of(m)).unavailable()).isFalse();
     }
 
     @Test

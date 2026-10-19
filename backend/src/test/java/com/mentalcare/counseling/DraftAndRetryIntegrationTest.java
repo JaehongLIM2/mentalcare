@@ -137,6 +137,40 @@ class DraftAndRetryIntegrationTest {
     }
 
     @Test
+    void aFailedSafetyCheckIsReportedAndRememberedNotTreatedAsNoRisk() {
+        Session s = sessions.start(null);
+        counseling.opening(s.id(), new Listener());
+        llm.moderationFailure = new LlmException(LlmException.Kind.ROUTE_NOT_SUPPORTED, "401 no_matching_rule");
+        llm.assessmentFailure = new LlmException(LlmException.Kind.TIMEOUT, "slow");
+        UnavailableListener turn = new UnavailableListener();
+
+        counseling.reply(s.id(), "오늘 있었던 일을 이야기하고 싶어요", turn);
+
+        assertThat(turn.unavailable).isTrue();
+        assertThat(turn.done).isNotNull();                      // the conversation goes on
+        assertThat(turn.risk).isNull();                         // no crisis banner from a timeout
+        Message saved = messageRepository.findBySession(s.id()).stream()
+                .filter(m -> m.role() == MessageRole.USER).reduce((a, b) -> b).orElseThrow();
+        assertThat(saved.safetyUnavailable()).isTrue();
+        assertThat(com.mentalcare.api.dto.ApiDtos.MessageDto.of(saved).safetyUnavailable()).isTrue();
+
+        // once the assessment works again, the next message is checked normally
+        llm.assessmentFailure = null;
+        UnavailableListener next = new UnavailableListener();
+        counseling.reply(s.id(), "그 뒤로는 괜찮아졌어요", next);
+        assertThat(next.unavailable).isFalse();
+        Message second = messageRepository.findBySession(s.id()).stream()
+                .filter(m -> m.role() == MessageRole.USER).reduce((a, b) -> b).orElseThrow();
+        assertThat(second.safetyUnavailable()).isFalse();
+        assertThat(com.mentalcare.api.dto.ApiDtos.MessageDto.of(second).safetyUnavailable()).isNull();
+    }
+
+    static class UnavailableListener extends Listener {
+        boolean unavailable;
+        @Override public void onSafetyUnavailable() { unavailable = true; }
+    }
+
+    @Test
     void retryAfterAnInterruptedReplyReusesTheSavedUserMessage() {
         Session s = sessions.start(null);
         counseling.opening(s.id(), new Listener());

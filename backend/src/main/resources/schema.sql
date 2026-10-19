@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS messages (
     content     TEXT NOT NULL,
     status      TEXT NOT NULL DEFAULT 'COMPLETE',-- COMPLETE | INTERRUPTED | FAILED
     risk_level  TEXT,                            -- NONE | LOW | ELEVATED | IMMINENT (user messages only)
+    safety_status TEXT,                          -- NULL = checked (or no check needed) | UNAVAILABLE
     created_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);

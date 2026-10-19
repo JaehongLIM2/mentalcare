@@ -48,6 +48,7 @@ export default function SessionPage() {
   const [error, setError] = useState<string | null>(null)
   const [errorKind, setErrorKind] = useState<string | null>(null)
   const [risk, setRisk] = useState<RiskLevel | null>(null)
+  const [safetyUnchecked, setSafetyUnchecked] = useState(false)
   const [endHint, setEndHint] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -186,12 +187,19 @@ export default function SessionPage() {
       await streamTurn(url, body, {
         onUserSaved: (messageId) => {
           userSaved = true
+          setSafetyUnchecked(false) // a newly saved message is checked afresh
           setPhase('saved')
           if (pending) {
             setMessages((prev) => prev.map((m) => (m.id === pending.tempId ? { ...m, id: messageId } : m)))
           }
         },
         onSafety: (level) => setRisk(level),
+        onSafetyUnavailable: () => {
+          setSafetyUnchecked(true)
+          if (pending) {
+            setMessages((prev) => prev.map((m) => (m.id === pending.tempId ? { ...m, safetyUnavailable: true } : m)))
+          }
+        },
         onContext: (_included, omittedCount) => setOmitted(omittedCount),
         onDelta: (t) => {
           setPhase('generating')
@@ -249,6 +257,7 @@ export default function SessionPage() {
         setMessages(d.messages)
         const lastUser = [...d.messages].reverse().find((m) => m.role === 'USER')
         if (lastUser?.riskLevel && lastUser.riskLevel !== 'NONE') setRisk(lastUser.riskLevel)
+        if (lastUser?.safetyUnavailable) setSafetyUnchecked(true)
         if (d.draft && d.draft.content.trim() && !inputRef.current.trim()) {
           saverRef.current?.markSaved(d.draft.content)
           setInput(d.draft.content)
@@ -411,7 +420,7 @@ export default function SessionPage() {
       <div className="chat-scroll" ref={chatRef} onScroll={onChatScroll}>
         <div className="chat">
           {visible.map((m) => (
-            <ChatMessage key={m.id} role={m.role} content={m.content} createdAt={m.createdAt} status={m.status} />
+            <ChatMessage key={m.id} role={m.role} content={m.content} createdAt={m.createdAt} status={m.status} safetyUnavailable={m.safetyUnavailable} />
           ))}
           {streamingText !== null && <ChatMessage role="ASSISTANT" content={streamingText || '…'} streaming />}
         </div>
@@ -423,6 +432,12 @@ export default function SessionPage() {
       </div>
 
       <div className="session-notices">
+        {safetyUnchecked && (
+          <div className="alert warn" role="status">
+            방금 메시지는 일시적인 오류로 <b>안전 검사를 하지 못했습니다.</b> 대화는 그대로 이어지지만, 위험이 없다고 확인된 것은 아닙니다.
+            지금 위험하다고 느끼신다면 자살예방상담전화 109, 정신건강위기상담 1577-0199, 긴급 112/119에 연락하세요.
+          </div>
+        )}
         {omitted > 0 && (
           <div className="alert warn" role="status">
             상담이 길어져 앞부분 메시지 {omitted}개는 상담자에게 전달되지 않습니다. 중요한 내용이면 다시 한 번 언급해 주세요.

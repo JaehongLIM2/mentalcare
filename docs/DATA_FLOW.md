@@ -65,7 +65,7 @@ flowchart LR
 | 필드 | 내용 | 출처 |
 |---|---|---|
 | `model` | 선택된 상담 모델 slug | 설정/카탈로그 |
-| `instructions` | 시스템 프롬프트(`counselor-system-v2`) + (안전 모드 지시) + `<<<DATA 프로필>>>` + `<<<DATA 장기 기억>>>`(ACTIVE만, 최대 30) + `<<<DATA 최근 상담 요약>>>`(최근 N회, 기본 3; 요약 필드당 최대 5항목) + `<<<DATA 이번 상담>>>`(날짜, 체크인, 메모) | DB |
+| `instructions` | 시스템 프롬프트(`counselor-system-v2`) + (안전 모드 지시) + `<<<DATA 프로필>>>` + `<<<DATA 장기 기억>>>`(ACTIVE만, 최대 30) + `<<<DATA 최근 상담 요약>>>`(최근 N회, 기본 3; 요약 필드당 최대 5항목) + `<<<DATA 이번 상담>>>`(날짜, 지난 상담과의 간격, 체크인, 메모). 첫 발화에는 `opening-cue-v2` 지시가 developer 메시지로 붙음 | DB |
 | `input[]` | 현재 세션의 모든 메시지 (`user`/`assistant`), 첫 턴에는 `developer` cue 1개 | DB |
 | `reasoning.effort` | low/medium/high | 설정 |
 | `max_output_tokens` | **API 키 모드에서만** | 설정 |
@@ -73,12 +73,13 @@ flowchart LR
 보내지 **않는** 것: 과거 세션 원문, 전체 DB, Markdown 파일, 파일 경로, application.yml 값, OAuth 자격증명, 환경변수, CANDIDATE/ARCHIVED 기억, 사용자 식별자(이메일 등).
 
 ### 7. Spring Boot → OpenAI (`POST /v1/responses`, 상담 요약 / Structured Output)
-- `instructions`: `session-summary-v1` 프롬프트.
+- `instructions`: `session-summary-v2` 프롬프트.
 - `input[0]` (user): 상담 날짜, 체크인, **기존 기억 목록(id + 내용, CANDIDATE/ACTIVE)**, **현재 세션 대화 전체**.
 - `text.format`: strict JSON schema(`session-summary.schema.json`).
 
 ### 8. Spring Boot → OpenAI (`POST /v1/responses`, 위기 평가)
-- 신호(Moderation 또는 키워드)가 있을 때만. `input`: 최근 메시지 최대 6개. strict JSON schema.
+- Moderation을 쓸 수 있을 때는 신호(Moderation 또는 키워드)가 있을 때만, **Moderation을 쓸 수 없을 때는 모든 사용자 메시지**에 대해 실행. `input`: 최근 메시지 최대 6개. strict JSON schema.
+- 평가에 실패하면 결과는 "위험 없음"이 아니라 `UNAVAILABLE`로 기록되고(`safety_events`, `messages.safety_status`), 브라우저에 `safety_unavailable` 이벤트로 알립니다.
 
 ### 9. Spring Boot → OpenAI (`POST /v1/moderations`)
 - 사용자 메시지 1건의 본문. ChatGPT 플랜 모드에서 라우트가 허용되지 않으면(`401 no_matching_rule`) 6시간 건너뜀.

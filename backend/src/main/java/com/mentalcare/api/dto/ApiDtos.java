@@ -67,10 +67,13 @@ public final class ApiDtos {
         }
     }
 
-    public record MessageDto(long id, String role, String content, String status, String riskLevel, Instant createdAt) {
+    /** {@code safetyUnavailable} is present (true) only on user messages whose safety check could not be done. */
+    public record MessageDto(long id, String role, String content, String status, String riskLevel, Instant createdAt,
+                             Boolean safetyUnavailable) {
         public static MessageDto of(Message m) {
             return new MessageDto(m.id(), m.role().name(), m.content(), m.status().name(),
-                    m.riskLevel() == null ? null : m.riskLevel().name(), m.createdAt());
+                    m.riskLevel() == null ? null : m.riskLevel().name(), m.createdAt(),
+                    m.safetyUnavailable() ? Boolean.TRUE : null);
         }
     }
 

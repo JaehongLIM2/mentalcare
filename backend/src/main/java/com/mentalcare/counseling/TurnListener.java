@@ -7,6 +7,9 @@ import com.mentalcare.domain.Message;
 public interface TurnListener {
     void onUserSaved(Message userMessage);
     void onSafety(RiskLevel riskLevel);
+
+    /** The safety check for the user's message could not be done; the turn continues. */
+    default void onSafetyUnavailable() {}
     void onDelta(String text);
     void onDone(Message assistantMessage);
 

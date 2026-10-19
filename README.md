@@ -122,7 +122,7 @@ docker compose up --build
 ### 4. 테스트
 
 ```
-cd backend  && mvn test                 # 134 tests
+cd backend  && mvn test                 # 141 tests
 cd frontend && npm run typecheck && npm run test:security && npm run test:unit && npm run build && npm audit   # test:unit은 Node 22.18+
 ```
 
@@ -232,8 +232,8 @@ open-source/self-hosted 흐름을 Java로 구현했습니다. 공식 SDK(`@siwc/
 | 파일 | 용도 |
 |---|---|
 | `counselor-system-v2.md` | 상담 AI의 기본 행동 원칙 + **신뢰 경계**(`<<<DATA>>>` 블록은 데이터) |
-| `opening-cue-v1.md` | 상담 첫 발화(인사 + 첫 질문) 지시 |
-| `session-summary-v1.md` | 상담 요약 + 기억 후보 추출 (사실/해석 분리 규칙) |
+| `opening-cue-v2.md` | 상담 첫 발화(인사 + 첫 질문) 지시. 지난 상담과의 실제 간격(같은 날/며칠/한 주/오랜만)에 맞춰 표현 |
+| `session-summary-v2.md` | 상담 요약 + 기억 후보 추출 (사실/해석 분리 규칙, 사람·반려동물·진행 중인 사안·가치관은 반드시 후보로) |
 | `crisis-assessment-v1.md` | 위험 수준 판단(NONE/LOW/ELEVATED/IMMINENT) |
 | `crisis-response-v1.md` | IMMINENT일 때 이번 턴에 적용되는 안전 모드 지시 |
 | `safety-addendum-v1.md` | ELEVATED 또는 위기 이력이 있는 세션에 덧붙는 주의 지시 |
@@ -268,10 +268,10 @@ ChatGPT 등에서 나눈 과거 상담을 MentalCare로 옮기려면, 그 대화
 ## Safety
 
 1. 사용자 메시지마다 Moderation API + 한국어/일본어/영어 위기 키워드로 **신호**를 봅니다.
-2. 신호가 있으면 최근 대화를 포함해 상담 모델에게 구조화된 위기 평가를 요청합니다. "죽겠다" 같은 관용 표현은 여기서 걸러집니다. 키워드나 Moderation 단독으로 모드를 바꾸지 않습니다.
+2. 신호가 있으면 최근 대화를 포함해 상담 모델에게 구조화된 위기 평가를 요청합니다(Moderation을 쓸 수 있을 때는 신호가 있을 때만). "죽겠다" 같은 관용 표현은 여기서 걸러집니다. 키워드나 Moderation 단독으로 모드를 바꾸지 않습니다.
    **Moderation을 쓸 수 없을 때**(ChatGPT 토큰으로는 `/v1/moderations`가 `401 no_matching_rule`로 거부됨)는 키워드가 없는 위험 표현을 놓치지 않도록 **모든 사용자 메시지**를 같은 위기 평가로 검사합니다. 메시지마다 평가 요청이 하나 더 가므로 답변 시작이 몇 초 늦어질 수 있습니다.
 3. `ELEVATED` → 일반 상담 + 안전 확인 지시, 화면에 도움 안내. `IMMINENT` → 이번 턴은 crisis-response 프롬프트, 세션에 `crisis_flag`, 긴급 연락처 배너.
-4. 실패 처리: 신호(키워드/Moderation)가 있었는데 평가가 실패하면 보수적으로 ELEVATED. 신호 없이 검사만 실패하면 상담은 그대로 진행하되 `safety_events`에 "screening unavailable"로 기록. 지원되지 않는 경로(`no_matching_rule` 등)는 토큰 갱신 없이 6시간 동안 Moderation을 쉬고, 실제 인증 만료(`invalid_token`)만 토큰 갱신을 강제합니다.
+4. 실패 처리: 평가를 하지 못한 경우는 "위험 없음"과 따로 구분합니다(`safety_events.risk_level = UNAVAILABLE`, 메시지 `safety_status = UNAVAILABLE`). 신호(키워드/Moderation)가 있었는데 평가가 실패하면 보수적으로 ELEVATED(안전 확인 모드). 신호 없이 검사만 실패하면 상담은 그대로 진행하되, 화면에 "안전 검사를 하지 못했습니다" 안내와 도움 연락처를 띄우고 그 메시지에 "안전 검사 못 함"을 표시합니다(새로고침 후에도 유지). 지원되지 않는 경로(`no_matching_rule` 등)는 토큰 갱신 없이 6시간 동안 Moderation을 쉬고, 실제 인증 만료(`invalid_token`)만 토큰 갱신을 강제합니다.
 5. 이 시스템은 의학적으로 검증된 진단 도구가 아닙니다.
 
 ## Privacy

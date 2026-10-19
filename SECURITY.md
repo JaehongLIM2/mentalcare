@@ -90,7 +90,7 @@
 | SQL | 모든 쿼리 `JdbcClient` named parameter 바인딩. 동적 SQL 조립 없음. enum/정규식으로 입력 검증. |
 | 의존성 | Spring Boot 3.5.16, sqlite-jdbc 3.53.4.0, nimbus-jose-jwt 10.10, jna-platform 5.19.1; vite 7, react-router 7(알려진 취약점 해결). 미사용 의존성 없음. |
 | Docker | multi-stage, non-root(uid 1000), read-only rootfs, `cap_drop: ALL`, `no-new-privileges`, `.dockerignore`로 data/.env/*.db/archive 제외, build arg로 비밀 주입 없음. |
-| Safety(상담) | Moderation·키워드는 신호일 뿐, 구조화된 위기 평가가 판정. Moderation을 쓸 수 없으면(ChatGPT 토큰의 `no_matching_rule` 등) 모든 메시지를 위기 평가로 검사해 키워드 없는 위험 표현도 평가. 신호 후 평가 실패는 ELEVATED, 신호 없는 검사 실패는 NONE+감사 기록. 미지원 경로는 토큰 갱신을 유발하지 않고, 실제 인증 만료만 갱신. 관용 표현 vs 명시적 위험을 테스트로 고정. 의학적 진단 시스템이 아님을 UI/프롬프트에 명시. |
+| Safety(상담) | Moderation·키워드는 신호일 뿐, 구조화된 위기 평가가 판정. Moderation을 쓸 수 없으면(ChatGPT 토큰의 `no_matching_rule` 등) 모든 메시지를 위기 평가로 검사해 키워드 없는 위험 표현도 평가. 신호 후 평가 실패는 ELEVATED, 신호 없는 검사 실패는 "위험 없음"과 구분된 UNAVAILABLE로 기록하고 화면에 안내(도움 연락처 포함). 미지원 경로는 토큰 갱신을 유발하지 않고, 실제 인증 만료만 갱신. 관용 표현 vs 명시적 위험을 테스트로 고정. 의학적 진단 시스템이 아님을 UI/프롬프트에 명시. |
 
 ## Risks
 

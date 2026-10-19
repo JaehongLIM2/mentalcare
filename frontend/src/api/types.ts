@@ -39,6 +39,8 @@ export interface MessageDto {
   status: MessageStatus
   riskLevel?: RiskLevel | null
   createdAt: string
+  /** true on a user message whose safety check could not be done */
+  safetyUnavailable?: boolean | null
 }
 
 export interface DraftDto {

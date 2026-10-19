@@ -8,6 +8,7 @@ interface Props {
   createdAt?: string
   status?: MessageDto['status']
   streaming?: boolean
+  safetyUnavailable?: boolean | null
 }
 
 /**
@@ -28,7 +29,7 @@ export function withBold(text: string): ReactNode[] {
   return out
 }
 
-export default function ChatMessage({ role, content, createdAt, status, streaming }: Props) {
+export default function ChatMessage({ role, content, createdAt, status, streaming, safetyUnavailable }: Props) {
   const cls = role === 'USER' ? 'msg user' : 'msg assistant'
   return (
     <div className={cls}>
@@ -37,6 +38,7 @@ export default function ChatMessage({ role, content, createdAt, status, streamin
         {role === 'USER' ? '나' : '상담자'}
         {createdAt ? ` · ${fmtTime(createdAt)}` : ''}
         {status === 'INTERRUPTED' ? ' · 응답이 중간에 끊김' : ''}
+        {safetyUnavailable ? ' · 안전 검사 못 함' : ''}
       </div>
     </div>
   )

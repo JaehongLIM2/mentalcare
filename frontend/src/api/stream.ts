@@ -3,6 +3,8 @@ import type { ErrorDto, MessageDto, RiskLevel } from './types'
 export interface TurnHandlers {
   onUserSaved?: (messageId: number) => void
   onSafety?: (level: RiskLevel) => void
+  /** The safety check for the message could not be done (the reply still comes). */
+  onSafetyUnavailable?: () => void
   /** How much of this session the model sees on this turn (older messages are omitted first). */
   onContext?: (includedMessages: number, omittedMessages: number) => void
   onDelta: (text: string) => void
@@ -11,7 +13,7 @@ export interface TurnHandlers {
 }
 
 /**
- * POSTs to a streaming endpoint and dispatches SSE events (user_saved, safety, context, delta, done, error).
+ * POSTs to a streaming endpoint and dispatches SSE events (user_saved, safety, safety_unavailable, context, delta, done, error).
  * Uses fetch + ReadableStream because EventSource cannot send a POST body.
  */
 export async function streamTurn(
@@ -84,6 +86,9 @@ export async function streamTurn(
         break
       case 'safety':
         handlers.onSafety?.(obj.riskLevel as RiskLevel)
+        break
+      case 'safety_unavailable':
+        handlers.onSafetyUnavailable?.()
         break
       case 'context':
         handlers.onContext?.(Number(obj.includedMessages ?? 0), Number(obj.omittedMessages ?? 0))
