@@ -20,3 +20,6 @@ docs/
 scripts/
 README.md
 SECURITY.md
+
+# --- background launcher runtime (PID + log) ---
+.run/

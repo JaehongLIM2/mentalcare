@@ -42,6 +42,19 @@ class LocalGuardAndApiSecurityTest {
     // ------------------------------------------------------------------ local-only guard
 
     @Test
+    void healthProbeIsCheapAndLocalOnly() throws Exception {
+        mvc.perform(get("/api/health").header("Host", "127.0.0.1:8080"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"));
+        mvc.perform(get("/api/health").header("Host", "evil.example.com")).andExpect(status().isForbidden());
+        // shutdown is a state-changing POST: cross-site and foreign-origin callers are rejected before it runs
+        mvc.perform(post("/api/system/shutdown").header("Host", "127.0.0.1:8080").header("Origin", "https://evil.example"))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/system/shutdown").header("Host", "127.0.0.1:8080").header("Sec-Fetch-Site", "cross-site"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void loopbackHostIsAccepted() throws Exception {
         mvc.perform(get("/api/home").header("Host", "127.0.0.1:8080")).andExpect(status().isOk());
         mvc.perform(get("/api/home").header("Host", "localhost:8080")).andExpect(status().isOk());

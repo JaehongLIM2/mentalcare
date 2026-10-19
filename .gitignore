@@ -22,3 +22,6 @@ node_modules/
 .DS_Store
 Thumbs.db
 *.log
+
+# --- background launcher runtime (PID + log) ---
+.run/

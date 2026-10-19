@@ -88,11 +88,20 @@ scripts\dev-frontend.cmd    # http://127.0.0.1:5173  (Vite, /api → 8080 proxy)
 ### 2. 단일 jar로 실행 (매주 사용할 때)
 
 ```
-scripts\build.cmd   # frontend 빌드 → backend/src/main/resources/static → backend\target\mentalcare.jar
-scripts\run.cmd     # java -jar backend\target\mentalcare.jar
+scriptsuild.cmd   # frontend 빌드 → backend/src/main/resources/static → backend	arget\mentalcare.jar
+scriptsun.cmd     # java -jar backend	arget\mentalcare.jar (콘솔 창 유지)
 ```
 
 http://127.0.0.1:8080 을 엽니다. 서버는 `127.0.0.1`에만 바인딩됩니다.
+
+### 2-1. Windows에서 터미널 없이 실행 (권장)
+
+| 더블클릭 | 동작 |
+|---|---|
+| `MentalCare 시작.cmd` | `javaw.exe`로 백그라운드 실행(콘솔 없음) → `/api/health` 준비 대기 → 기본 브라우저로 http://127.0.0.1:8080 열기. 이미 실행 중이면 브라우저만 엽니다. |
+| `MentalCare 종료.cmd` | `mentalcare.jar`를 실행 중인 프로세스만 정상 종료(`POST /api/system/shutdown`), 15초 내 안 끝나면 강제 종료. |
+
+PID와 로그는 `.run\` 폴더(git 제외)에 남습니다. 처음 한 번은 `scriptsuild.cmd`로 jar를 만들어야 합니다. 자세한 동작과 jpackage(`MentalCare.exe`) 검토는 [docs/PACKAGING.md](docs/PACKAGING.md)를 보세요.
 
 ### 3. Docker
 
@@ -251,9 +260,11 @@ mentalcare/
 │       ├── prompts/         프롬프트 (버전 파일)
 │       └── schemas/         Structured Output JSON Schema
 ├── frontend/                React + Vite (scripts/check-security.mjs: 정적 보안 검사)
-├── scripts/                 dev-backend.cmd, dev-frontend.cmd, build.cmd, run.cmd, docker-persistence-test.sh
+├── scripts/                 dev-backend.cmd, dev-frontend.cmd, build.cmd, run.cmd, start-background.ps1, stop.ps1, docker-persistence-test.sh
+├── MentalCare 시작.cmd / MentalCare 종료.cmd   Windows 백그라운드 실행/종료
 ├── docs/DESIGN.md           설계 문서
 ├── docs/DATA_FLOW.md        데이터 흐름 (OpenAI로 나가는 필드)
+├── docs/PACKAGING.md        Windows 실행 방식, jpackage 검토
 ├── SECURITY.md              위협 모델, 신뢰 경계, 위험 목록
 ├── Dockerfile, docker-compose.yml, .dockerignore
 ├── data/                    (생성됨, git-ignored) SQLite + Markdown + credentials
