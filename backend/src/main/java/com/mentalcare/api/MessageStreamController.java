@@ -53,7 +53,7 @@ public class MessageStreamController {
     public SseEmitter send(@PathVariable long id, @Valid @RequestBody SendMessageRequest request) {
         SseEmitter emitter = new SseEmitter(TIMEOUT_MS);
         EmitterListener listener = new EmitterListener(emitter);
-        executor.submit(() -> run(() -> counseling.reply(id, request.content(), listener), listener));
+        executor.submit(() -> run(() -> counseling.reply(id, request.content(), request.draftRev(), listener), listener));
         return emitter;
     }
 

@@ -87,6 +87,14 @@ public class CounselingService {
 
     /** Saves the user's message, evaluates safety, and streams the reply. */
     public void reply(long sessionId, String userText, TurnListener listener) {
+        reply(sessionId, userText, null, listener);
+    }
+
+    /**
+     * @param draftRev the browser's draft revision at the moment of sending; autosaves issued before it
+     *                 (still in flight) can no longer bring the sent text back as a draft
+     */
+    public void reply(long sessionId, String userText, Long draftRev, TurnListener listener) {
         if (userText == null || userText.isBlank()) {
             listener.onError("메시지가 비어 있습니다.", "BAD_REQUEST");
             return;
@@ -104,7 +112,7 @@ public class CounselingService {
 
             // 1. Persist first so nothing is lost if the AI call fails. The sent text is no longer a draft.
             Message userMessage = messages.insert(sessionId, MessageRole.USER, userText.trim(), MessageStatus.COMPLETE, null);
-            drafts.delete(sessionId);
+            drafts.clearUpTo(sessionId, draftRev == null ? DraftRevisions.next() : draftRev);
             sessions.touch(sessionId);
             listener.onUserSaved(userMessage);
 

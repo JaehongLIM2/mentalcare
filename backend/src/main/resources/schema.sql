@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS imported_archives (
 -- Unsent composer text of an active session, so a refresh or closed tab does not lose it.
 CREATE TABLE IF NOT EXISTS drafts (
     session_id  INTEGER PRIMARY KEY REFERENCES sessions(id),
-    content     TEXT NOT NULL,
+    content     TEXT NOT NULL,                    -- '' = tombstone (sent; older autosaves are ignored)
+    rev         INTEGER NOT NULL DEFAULT 0,       -- client revision; only newer writes replace the row
     updated_at  TEXT NOT NULL
 );

@@ -108,7 +108,7 @@ public class SessionController {
     @PostMapping("/{id}/draft")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void saveDraft(@PathVariable long id, @Valid @RequestBody(required = false) SaveDraftRequest request) {
-        sessions.saveDraft(id, request == null ? null : request.content());
+        sessions.saveDraft(id, request == null ? null : request.content(), request == null ? null : request.rev());
     }
 
     @PostMapping("/{id}/complete")

@@ -105,8 +105,8 @@ export const api = {
   session: (id: number) => request<SessionDetailDto>('GET', `/api/sessions/${id}`),
   sessionContext: (id: number) => request<ContextOutline>('GET', `/api/sessions/${id}/context`),
   /** Composer text; sent with keepalive when the tab is closing. Blank removes the draft. */
-  saveDraft: (id: number, content: string, keepalive = false) =>
-    request<void>('POST', `/api/sessions/${id}/draft`, { content }, keepalive),
+  saveDraft: (id: number, content: string, rev: number, keepalive = false) =>
+    request<void>('POST', `/api/sessions/${id}/draft`, { content, rev }, keepalive),
   completeSession: (id: number) => request<CompletionDto>('POST', `/api/sessions/${id}/complete`),
   deleteSession: (id: number) => request<DeletionResult>('DELETE', `/api/sessions/${id}`),
   deleteAllData: (includeAppBackups = true) =>

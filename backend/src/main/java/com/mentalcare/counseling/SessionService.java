@@ -118,19 +118,27 @@ public class SessionService {
 
     /** Stores the composer text of an active session; blank text removes the draft. */
     public void saveDraft(long id, String content) {
+        saveDraft(id, content, null);
+    }
+
+    /**
+     * Stores the composer text of an active session at revision {@code rev} (server clock when null).
+     * Blank text hides the draft. A request older than the stored revision is ignored, not an error.
+     *
+     * @return true when written, false when it was stale
+     */
+    public boolean saveDraft(long id, String content, Long rev) {
         if (!locks.tryLockGlobalRead()) {
             throw new ConflictException("데이터 삭제·복원 또는 종료가 진행 중이라 초안을 저장하지 못했습니다.", id);
         }
         try {
-            if (content == null || content.isBlank()) {
-                get(id);
-                drafts.delete(id);
-                return;
-            }
-            if (drafts.saveIfActive(id, content) == 0) {
-                Session session = get(id); // NotFound when it is gone
+            String text = content == null || content.isBlank() ? "" : content;
+            if (drafts.saveIfActive(id, text, rev == null ? DraftRevisions.next() : rev) == 1) return true;
+            Session session = get(id); // NotFound when it is gone
+            if (!session.isActive()) {
                 throw new ConflictException("종료된 상담에는 초안을 저장할 수 없습니다.", session.id());
             }
+            return false; // a newer revision is already stored
         } finally {
             locks.unlockGlobalRead();
         }

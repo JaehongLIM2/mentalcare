@@ -128,14 +128,20 @@ public class BackupService {
         return backupsDir;
     }
 
-    /** Safety snapshots written before restores; they contain counseling data and live under data/backups. */
+    /**
+     * Copies of counseling data the app keeps on its own: pre-restore snapshots under data/backups and any
+     * folder left behind by an interrupted restore. Shown in settings and removed by delete-all.
+     */
     public List<Path> safetySnapshots() {
-        if (!Files.isDirectory(backupsDir)) return List.of();
-        try (Stream<Path> s = Files.list(backupsDir)) {
-            return s.filter(p -> p.getFileName().toString().startsWith("before-restore-")).sorted().toList();
-        } catch (IOException e) {
-            return List.of();
+        List<Path> out = new ArrayList<>(leftoverRestoreFolders());
+        if (Files.isDirectory(backupsDir)) {
+            try (Stream<Path> s = Files.list(backupsDir)) {
+                s.filter(p -> p.getFileName().toString().startsWith("before-restore-")).sorted().forEach(out::add);
+            } catch (IOException e) {
+                // listing failed: report what we have
+            }
         }
+        return out;
     }
 
     /**
@@ -145,7 +151,11 @@ public class BackupService {
      */
     public int[] deleteAppBackups() {
         int ok = 0, failed = 0;
-        if (!Files.isDirectory(backupsDir)) return new int[]{0, 0};
+        for (Path p : leftoverRestoreFolders()) {
+            deleteTree(p);
+            if (Files.exists(p)) failed++; else ok++;
+        }
+        if (!Files.isDirectory(backupsDir)) return new int[]{ok, failed};
         try (Stream<Path> s = Files.list(backupsDir)) {
             for (Path p : s.toList()) {
                 String name = p.getFileName().toString();
@@ -284,6 +294,9 @@ public class BackupService {
             pruneSafetySnapshots();
 
             // 2. the new Markdown folder is fully prepared next to the live one before the database changes
+            for (Path stale : leftoverRestoreFolders()) {
+                if (stale.getFileName().toString().startsWith(stagingPrefix())) deleteTree(stale);
+            }
             staged = stageMarkdown(work, e.markdownFiles());
             final Path stagedDir = staged;
 
@@ -470,8 +483,41 @@ public class BackupService {
     private Path stageMarkdown(Path work, List<String> files) throws IOException {
         Path parent = markdownDir.getParent();
         Files.createDirectories(parent);
-        Path staged = parent.resolve("." + markdownDir.getFileName() + "-restore-" + UUID.randomUUID());
+        Path staged = parent.resolve(stagingPrefix() + UUID.randomUUID());
         Files.createDirectories(staged);
+        try {
+            copyIntoStaging(work, files, staged);
+        } catch (IOException | RuntimeException e) {
+            deleteTree(staged); // never leave a half-built copy of counseling files behind
+            if (Files.exists(staged)) log.warn("restore staging folder could not be removed: {}", staged.getFileName());
+            throw e;
+        }
+        return staged;
+    }
+
+    private String stagingPrefix() {
+        return "." + markdownDir.getFileName() + "-restore-";
+    }
+
+    private String displacedPrefix() {
+        return "." + markdownDir.getFileName() + "-before-restore-";
+    }
+
+    /** Leftover folders from a restore that crashed half-way (they contain counseling Markdown). */
+    List<Path> leftoverRestoreFolders() {
+        Path parent = markdownDir.getParent();
+        if (parent == null || !Files.isDirectory(parent)) return List.of();
+        try (Stream<Path> s = Files.list(parent)) {
+            return s.filter(Files::isDirectory).filter(p -> {
+                String n = p.getFileName().toString();
+                return n.startsWith(stagingPrefix()) || n.startsWith(displacedPrefix());
+            }).toList();
+        } catch (IOException e) {
+            return List.of();
+        }
+    }
+
+    private void copyIntoStaging(Path work, List<String> files, Path staged) throws IOException {
         if (Files.isDirectory(markdownDir)) {
             try (Stream<Path> s = Files.walk(markdownDir)) {
                 for (Path p : s.filter(Files::isRegularFile).filter(f -> !f.getFileName().toString().endsWith(".md")).toList()) {
@@ -488,7 +534,6 @@ public class BackupService {
             Files.createDirectories(to.getParent());
             Files.copy(from, to, StandardCopyOption.REPLACE_EXISTING);
         }
-        return staged;
     }
 
     /**

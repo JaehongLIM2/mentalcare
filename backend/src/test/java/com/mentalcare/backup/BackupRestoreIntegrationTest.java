@@ -313,6 +313,67 @@ class BackupRestoreIntegrationTest {
         assertThat(Files.isRegularFile(backupZip)).isTrue();
     }
 
+    @Autowired com.mentalcare.config.AppProperties app;
+
+    @Test
+    @Order(7)
+    void aFailedStagingLeavesNoCounselingFilesBehindAndDeleteAllSweepsOldLeftovers() throws Exception {
+        Path markdownDir = Path.of(app.markdownDir()).toAbsolutePath().normalize();
+        Files.createDirectories(markdownDir);
+        // a non-Markdown file in the live folder is carried over to the staging folder first …
+        Files.writeString(markdownDir.resolve("collide"), "user file");
+        // … so a backup with a directory of the same name makes staging fail half-way
+        Path colliding = withExtraEntry(backupZip, "sessions/collide/a.md", "# 상담 기록\n평문 상담 내용");
+        long before = sessions.count();
+
+        assertThatThrownBy(() -> backups.restore(colliding, false)).isInstanceOf(RuntimeException.class);
+
+        assertThat(sessions.count()).isEqualTo(before);
+        assertThat(leftovers(markdownDir)).isEmpty();          // the half-built staging copy is gone
+        assertThat(Files.readString(markdownDir.resolve("collide"))).isEqualTo("user file");
+        assertThat(locksFree()).isTrue();
+
+        // a folder left by a crashed restore (e.g. power loss) is reported and removed by delete-all
+        Path crashed = markdownDir.resolveSibling("." + markdownDir.getFileName() + "-restore-crashed");
+        Files.createDirectories(crashed.resolve("2026"));
+        Files.writeString(crashed.resolve("2026/x.md"), "평문 상담 내용");
+        assertThat(backups.safetySnapshots()).contains(crashed);
+        var r = deletion.deleteAll("DELETE", true);
+        assertThat(r.backupsDeleted()).isGreaterThanOrEqualTo(1);
+        assertThat(r.backupsRemaining()).isZero();
+        assertThat(Files.exists(crashed)).isFalse();
+        Files.deleteIfExists(markdownDir.resolve("collide"));
+    }
+
+    @Autowired com.mentalcare.counseling.SessionLocks locks;
+
+    private boolean locksFree() {
+        return locks.busyCount() == 0;
+    }
+
+    private static List<Path> leftovers(Path markdownDir) throws Exception {
+        try (Stream<Path> s = Files.list(markdownDir.getParent())) {
+            return s.filter(p -> p.getFileName().toString().startsWith("." + markdownDir.getFileName())).toList();
+        }
+    }
+
+    private static Path withExtraEntry(Path zip, String name, String content) throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (ZipFile in = new ZipFile(zip.toFile()); ZipOutputStream out = new ZipOutputStream(bytes)) {
+            for (ZipEntry e : java.util.Collections.list(in.entries())) {
+                out.putNextEntry(new ZipEntry(e.getName()));
+                in.getInputStream(e).transferTo(out);
+                out.closeEntry();
+            }
+            out.putNextEntry(new ZipEntry(name));
+            out.write(content.getBytes(StandardCharsets.UTF_8));
+            out.closeEntry();
+        }
+        Path file = Files.createTempFile("mentalcare-colliding-backup", ".zip");
+        Files.write(file, bytes.toByteArray());
+        return file;
+    }
+
     private static List<String> listMd(Path dir) throws Exception {
         try (Stream<Path> s = Files.walk(dir)) {
             return s.filter(Files::isRegularFile).map(p -> dir.relativize(p).toString()).sorted().toList();

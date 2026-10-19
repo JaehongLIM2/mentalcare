@@ -119,6 +119,24 @@ class DraftAndRetryIntegrationTest {
     }
 
     @Test
+    void outOfOrderAutosavesNeverBringBackOlderText() {
+        Session s = sessions.start(null);
+        long base = DraftRevisions.next();
+        assertThat(sessions.saveDraft(s.id(), "최신 초안", base + 20)).isTrue();
+        // a slower request issued earlier arrives afterwards: ignored, not an error
+        assertThat(sessions.saveDraft(s.id(), "이전 초안", base + 10)).isFalse();
+        assertThat(sessions.detail(s.id()).draft().content()).isEqualTo("최신 초안");
+
+        // sending at revision base+30 leaves a tombstone: an autosave issued before the send cannot resurrect the text
+        counseling.reply(s.id(), "최신 초안", base + 30, new Listener());
+        assertThat(sessions.saveDraft(s.id(), "최신 초안", base + 25)).isFalse();
+        assertThat(sessions.detail(s.id()).draft()).isNull();
+        // typing after the send works again
+        assertThat(sessions.saveDraft(s.id(), "다음 이야기", base + 40)).isTrue();
+        assertThat(sessions.detail(s.id()).draft().content()).isEqualTo("다음 이야기");
+    }
+
+    @Test
     void retryAfterAnInterruptedReplyReusesTheSavedUserMessage() {
         Session s = sessions.start(null);
         counseling.opening(s.id(), new Listener());

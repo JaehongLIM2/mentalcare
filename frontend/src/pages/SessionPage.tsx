@@ -69,38 +69,35 @@ export default function SessionPage() {
 
   // ---------------------------------------------------------------- draft autosave (local backend, never browser storage)
   const [draftFailing, setDraftFailing] = useState(false)
+  // The saver lives exactly as long as this effect: a new one per session, and a fresh one when React
+  // re-runs the effect (StrictMode in development), so a disposed instance is never reused.
   const saverRef = useRef<DraftSaver | null>(null)
-  const sessionIdRef = useRef(sessionId)
-  sessionIdRef.current = sessionId
-  if (saverRef.current === null) {
-    // saved only once the server confirmed it; failures stay pending and are retried
-    saverRef.current = new DraftSaver({
-      save: (text, keepalive) => api.saveDraft(sessionIdRef.current, text, keepalive),
+  useEffect(() => {
+    const saver = new DraftSaver({
+      // saved only once the server confirmed it; serialized; every request carries a newer revision
+      save: (text, keepalive, rev) => api.saveDraft(sessionId, text, rev, keepalive),
       onStateChange: setDraftFailing,
     })
-  }
-  const saver = saverRef.current
-  const flushDraft = useCallback((keepalive: boolean) => void saver.flush(inputRef.current, keepalive), [saver])
-
-  useEffect(() => {
-    const t = window.setTimeout(() => flushDraft(false), DRAFT_DEBOUNCE_MS)
-    return () => window.clearTimeout(t)
-  }, [input, flushDraft])
-
-  useEffect(() => {
-    const onHide = () => flushDraft(true)
+    saverRef.current = saver
+    const onHide = () => void saver.flush(inputRef.current, true)
     const onVisibility = () => {
-      if (document.visibilityState === 'hidden') flushDraft(true)
+      if (document.visibilityState === 'hidden') void saver.flush(inputRef.current, true)
     }
     window.addEventListener('pagehide', onHide)
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
       window.removeEventListener('pagehide', onHide)
       document.removeEventListener('visibilitychange', onVisibility)
-      flushDraft(true) // leaving the page through the app's own navigation
+      void saver.flush(inputRef.current, true) // leaving the page through the app's own navigation
       saver.dispose()
+      if (saverRef.current === saver) saverRef.current = null
     }
-  }, [flushDraft, saver])
+  }, [sessionId])
+
+  useEffect(() => {
+    const t = window.setTimeout(() => void saverRef.current?.flush(inputRef.current), DRAFT_DEBOUNCE_MS)
+    return () => window.clearTimeout(t)
+  }, [input, sessionId])
 
   // ---------------------------------------------------------------- context outline
   const loadOutline = useCallback(() => {
@@ -217,7 +214,7 @@ export default function SessionPage() {
         const lastUser = [...d.messages].reverse().find((m) => m.role === 'USER')
         if (lastUser?.riskLevel && lastUser.riskLevel !== 'NONE') setRisk(lastUser.riskLevel)
         if (d.draft && d.draft.content.trim() && !inputRef.current.trim()) {
-          saver.markSaved(d.draft.content)
+          saverRef.current?.markSaved(d.draft.content)
           setInput(d.draft.content)
           setDraftNotice(`${fmtTime(d.draft.updatedAt)}에 저장된 초안을 되살렸습니다.`)
         }
@@ -247,7 +244,9 @@ export default function SessionPage() {
     if (!text || busy) return
     setInput('')
     setDraftNotice(null)
-    saver.markSaved('') // the server drops the draft when it stores the message
+    // the server replaces the draft with a tombstone at this revision, newer than any autosave so far
+    const draftRev = saverRef.current?.nextRev()
+    saverRef.current?.markSaved('')
     const tempId = -Date.now()
     const optimistic: MessageDto = {
       id: tempId,
@@ -258,7 +257,7 @@ export default function SessionPage() {
     }
     setMessages((prev) => [...prev, optimistic])
     if (END_PHRASES.some((p) => text.includes(p))) setEndHint(true)
-    await runTurn(`/api/sessions/${sessionId}/messages`, { content: text }, { tempId, text })
+    await runTurn(`/api/sessions/${sessionId}/messages`, { content: text, draftRev }, { tempId, text })
   }
 
   const retry = async () => {
@@ -272,7 +271,7 @@ export default function SessionPage() {
     setError(null)
     try {
       const result = await api.completeSession(sessionId)
-      saver.markSaved(inputRef.current) // the server dropped the draft; do not re-save it on unmount
+      saverRef.current?.markSaved(inputRef.current) // the server dropped the draft; do not re-save it on unmount
       navigate(`/history/${sessionId}`, { replace: true, state: { completion: result } })
     } catch (e) {
       setError(errorMessage(e) + ' 상담은 그대로 유지됩니다. 잠시 후 다시 종료를 시도하세요.')
@@ -284,7 +283,7 @@ export default function SessionPage() {
     setDeleting(true)
     try {
       await api.deleteSession(sessionId)
-      saver.markSaved(inputRef.current)
+      saverRef.current?.markSaved(inputRef.current)
       navigate('/', { replace: true })
     } catch (e) {
       setError(errorMessage(e))

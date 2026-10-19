@@ -35,9 +35,11 @@ public final class ApiDtos {
 
     public record CreateSessionRequest(@jakarta.validation.Valid CheckInRequest checkIn) {}
 
-    public record SendMessageRequest(@NotBlank @Size(max = 20000) String content) {}
+    /** {@code draftRev}: the composer's draft revision when sending (optional). */
+    public record SendMessageRequest(@NotBlank @Size(max = 20000) String content, Long draftRev) {}
 
-    public record SaveDraftRequest(@Size(max = 20000) String content) {}
+    /** {@code rev}: strictly increasing per tab; older revisions never overwrite newer ones. */
+    public record SaveDraftRequest(@Size(max = 20000) String content, Long rev) {}
 
     public record UpdateMemoryRequest(@Size(max = 2000) String content, @Size(max = 50) String category, MemoryStatus status) {}
 

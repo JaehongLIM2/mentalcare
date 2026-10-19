@@ -33,7 +33,7 @@ flowchart LR
 | `POST /api/sessions/{id}/opening` | 없음 |
 | `POST /api/sessions/{id}/complete` | 없음 (서버가 DB에서 대화를 읽음) |
 | `POST /api/sessions/{id}/retry` | 없음 (서버가 저장된 마지막 사용자 메시지를 재사용) |
-| `POST /api/sessions/{id}/draft` | 작성 중 텍스트(초안) 1건; 탭 종료 시 `keepalive`로 전송 |
+| `POST /api/sessions/{id}/draft` | 작성 중 텍스트(초안) 1건 + revision; 탭 종료 시 `keepalive`로 전송, 더 새로운 revision만 저장 |
 | `GET /api/sessions?q=&from=&to=&tag=` | 검색어·기간·태그 (서버 내부 SQLite LIKE 검색, 외부 전송 없음) |
 | `GET /api/sessions/{id}/context` | 없음 — 응답으로 기억·요약 목록·메시지 포함/생략 수를 받음(프롬프트 원문은 없음) |
 | `GET /api/backup?credentials=` | 없음 — 응답으로 zip(DB 스냅샷·Markdown·선택 시 암호화된 자격증명)을 내려받음 |
