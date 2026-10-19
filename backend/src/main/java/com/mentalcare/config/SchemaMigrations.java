@@ -29,6 +29,7 @@ public class SchemaMigrations {
         addColumnIfMissing("sessions", "kind", "TEXT NOT NULL DEFAULT 'COUNSELING'");
         addColumnIfMissing("imported_archives", "content_hash", "TEXT");
         addColumnIfMissing("drafts", "rev", "INTEGER NOT NULL DEFAULT 0");
+        addColumnIfMissing("memories", "source", "TEXT NOT NULL DEFAULT 'SUMMARY'");
         backfillArchiveHashes();
         neutraliseDuplicateArchiveHashes();
         jdbc.sql("CREATE UNIQUE INDEX IF NOT EXISTS idx_imported_archives_hash ON imported_archives(content_hash)").update();

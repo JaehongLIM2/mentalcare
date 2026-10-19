@@ -33,9 +33,46 @@ public class MemoryService {
     private final MemoryRepository repository;
     private final AppProperties app;
 
-    public MemoryService(MemoryRepository repository, AppProperties app) {
+    /** Categories the UI offers and the summary prompt uses. */
+    public static final java.util.Set<String> CATEGORIES =
+            java.util.Set.of("concern", "pattern", "relationship", "goal", "event", "change", "other");
+
+    private final com.mentalcare.counseling.SessionLocks locks;
+
+    public MemoryService(MemoryRepository repository, AppProperties app, com.mentalcare.counseling.SessionLocks locks) {
         this.repository = repository;
         this.app = app;
+        this.locks = locks;
+    }
+
+    /**
+     * Adds a memory written by the user. It is what the user said about themselves, so it is USER_STATED and
+     * ACTIVE immediately (included in the next turn's context). The same text twice is refused.
+     */
+    public Memory addManual(String content, String category) {
+        String text = content == null ? "" : content.trim();
+        if (text.isEmpty()) throw new IllegalArgumentException("기억 내용을 입력하세요.");
+        if (text.length() > 2000) throw new IllegalArgumentException("기억은 2000자 이내로 적어 주세요.");
+        String cat = category == null || category.isBlank() ? "other" : category.trim();
+        if (!CATEGORIES.contains(cat)) throw new IllegalArgumentException("알 수 없는 분류입니다: " + cat);
+        if (!locks.tryLockGlobalRead()) {
+            throw new com.mentalcare.common.ConflictException("데이터 삭제·복원 또는 종료가 진행 중입니다. 잠시 후 다시 시도하세요.", null);
+        }
+        try {
+            String key = normalizeForDuplicate(text);
+            for (Memory m : repository.findByStatuses(List.of(MemoryStatus.CANDIDATE, MemoryStatus.ACTIVE))) {
+                if (normalizeForDuplicate(m.content()).equals(key)) {
+                    throw new com.mentalcare.common.ConflictException("같은 내용의 기억이 이미 있습니다.", m.id());
+                }
+            }
+            return repository.insertManual(text, cat);
+        } finally {
+            locks.unlockGlobalRead();
+        }
+    }
+
+    static String normalizeForDuplicate(String s) {
+        return s == null ? "" : s.toLowerCase(java.util.Locale.ROOT).replaceAll("[\\s\\p{Punct}]+", "");
     }
 
     public List<Memory> activeMemories() {

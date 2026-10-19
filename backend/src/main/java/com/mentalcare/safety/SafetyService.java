@@ -30,13 +30,20 @@ import java.util.List;
  * structured crisis assessment with conversational context makes the call. Failures of the
  * external calls degrade conservatively (keyword hit → ELEVATED) and never block counseling.
  *
+ * <p>When moderation is not available (the route is not admitted for a ChatGPT plan token, or it
+ * failed for this message), the keyword list alone would miss risk phrased without any keyword.
+ * In that case every user message is <b>screened</b> with the same structured assessment. A failed
+ * screen without any signal keeps the turn as is (NONE) but is recorded as a safety event so the
+ * gap is auditable; a failed assessment after a signal stays conservative (ELEVATED).
+ *
  * <p>This is a self-reflection tool, not a validated clinical screening instrument.
  */
 @Service
 public class SafetyService {
 
     private static final Logger log = LoggerFactory.getLogger(SafetyService.class);
-    private static final Duration MODERATION_BACKOFF = Duration.ofMinutes(30);
+    /** An unsupported route does not come back by itself; retry rarely (it may be enabled on the account later). */
+    static final Duration MODERATION_BACKOFF = Duration.ofHours(6);
 
     private final LlmClient llm;
     private final CrisisKeywordDetector keywords;
@@ -74,8 +81,9 @@ public class SafetyService {
         ModerationSignal moderation = moderate(userMessage.content());
         boolean keywordHit = keywords.matches(userMessage.content());
         boolean moderationHit = moderation != null && moderation.anySignal(threshold);
+        boolean screening = moderation == null && !keywordHit; // no moderation: assess every message
 
-        if (!keywordHit && !moderationHit) {
+        if (!keywordHit && !moderationHit && !screening) {
             return SafetyDecision.none(session.crisisFlag());
         }
 
@@ -86,20 +94,34 @@ public class SafetyService {
                     models.counselingModel(),
                     prompts.load(PromptLoader.CRISIS_ASSESSMENT).content(),
                     formatConversation(recentMessages));
+            if (result == null || result.value() == null) {
+                throw new LlmException(LlmException.Kind.PARSE_FAILED, "empty crisis assessment");
+            }
             usage.record(UsageRecorder.CRISIS_ASSESSMENT, result.usage(), session.id());
             level = parseLevel(result.value().riskLevel());
             reason = result.value().reason();
         } catch (LlmException e) {
+            if (screening) {
+                // nothing pointed at risk and we could not look closer: keep counseling going, leave a trace
+                log.warn("Safety screen unavailable ({}) session={} message={}; no signal, keeping NONE",
+                        e.kind(), session.id(), userMessage.id());
+                recordEvent(session.id(), userMessage.id(), null, false, RiskLevel.NONE, "screening unavailable: " + e.kind());
+                return SafetyDecision.none(session.crisisFlag());
+            }
             log.warn("Crisis assessment unavailable ({}); falling back to conservative ELEVATED", e.kind());
             level = RiskLevel.ELEVATED;
             reason = "assessment unavailable: " + e.kind();
         }
 
+        if (screening && level == RiskLevel.NONE) {
+            return SafetyDecision.none(session.crisisFlag()); // routine screen: no event row per message
+        }
+
         // A moderation-only hit (no keyword) that the assessment downgrades to NONE stays NONE: the
         // assessment saw the context, moderation did not.
         recordEvent(session.id(), userMessage.id(), moderation, keywordHit, level, reason);
-        log.info("safety session={} message={} moderationHit={} keywordHit={} risk={}",
-                session.id(), userMessage.id(), moderationHit, keywordHit, level);
+        log.info("safety session={} message={} moderationHit={} keywordHit={} screening={} risk={}",
+                session.id(), userMessage.id(), moderationHit, keywordHit, screening, level);
 
         SafetyMode mode = switch (level) {
             case IMMINENT -> SafetyMode.CRISIS;
@@ -107,6 +129,11 @@ public class SafetyService {
             case LOW, NONE -> session.crisisFlag() ? SafetyMode.CAUTION : SafetyMode.NORMAL;
         };
         return new SafetyDecision(level, mode, reason);
+    }
+
+    /** True while moderation is switched off because its route is not available for this credential. */
+    public boolean moderationSuspended() {
+        return moderationDisabledUntil.isAfter(Instant.now());
     }
 
     private ModerationSignal moderate(String text) {
@@ -119,10 +146,11 @@ public class SafetyService {
             if (e.kind() == LlmException.Kind.ROUTE_NOT_SUPPORTED || e.kind() == LlmException.Kind.PLAN_NOT_ELIGIBLE
                     || e.kind() == LlmException.Kind.UNSUPPORTED_CAPABILITY) {
                 moderationDisabledUntil = Instant.now().plus(MODERATION_BACKOFF);
-                log.warn("Moderation route not available for this credential ({}); keyword signal only for {} min",
-                        e.kind(), MODERATION_BACKOFF.toMinutes());
+                log.warn("Moderation route not available for this credential ({}); screening every message for {} h",
+                        e.kind(), MODERATION_BACKOFF.toHours());
             } else {
-                log.warn("Moderation unavailable ({}), continuing with keyword signal only", e.kind());
+                // transient (network, server) or a real auth problem: try moderation again next turn
+                log.warn("Moderation unavailable ({}); screening this message", e.kind());
             }
             return null;
         }

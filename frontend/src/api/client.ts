@@ -116,6 +116,8 @@ export const api = {
     const q = status === undefined ? '' : status === 'ALL' ? '?status=ALL' : `?status=${status.join(',')}`
     return request<MemoryDto[]>('GET', `/api/memories${q}`)
   },
+  createMemory: (content: string, category: string) =>
+    request<MemoryDto>('POST', '/api/memories', { content, category }),
   updateMemory: (id: number, patch: { content?: string; category?: string; status?: MemoryStatus }) =>
     request<MemoryDto>('PATCH', `/api/memories/${id}`, patch),
 

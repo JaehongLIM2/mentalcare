@@ -25,6 +25,9 @@ class OpenAiErrorsTest {
     @Test
     void statusFallbacks() {
         assertThat(OpenAiErrors.classify(401, null)).isEqualTo(Kind.AUTH_REQUIRED);
+        assertThat(OpenAiErrors.classify(401, "invalid_token")).isEqualTo(Kind.AUTH_REQUIRED);
+        // the plan-usage gateway's answer for a route it does not admit (observed on /v1/moderations)
+        assertThat(OpenAiErrors.classify(401, "no_matching_rule")).isEqualTo(Kind.ROUTE_NOT_SUPPORTED);
         assertThat(OpenAiErrors.classify(429, null)).isEqualTo(Kind.RATE_LIMIT);
         assertThat(OpenAiErrors.classify(500, null)).isEqualTo(Kind.SERVER);
         assertThat(OpenAiErrors.classify(400, "invalid_request_error")).isEqualTo(Kind.BAD_REQUEST);

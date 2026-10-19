@@ -1,5 +1,6 @@
 package com.mentalcare.api;
 
+import com.mentalcare.api.dto.ApiDtos.CreateMemoryRequest;
 import com.mentalcare.api.dto.ApiDtos.MemoryDto;
 import com.mentalcare.api.dto.ApiDtos.ObservationDto;
 import com.mentalcare.api.dto.ApiDtos.UpdateMemoryRequest;
@@ -34,6 +35,13 @@ public class MemoryController {
         Set<MemoryStatus> statuses = parseStatuses(status);
         List<Memory> list = memories.list(statuses);
         return toDtos(list);
+    }
+
+    /** A memory the user writes directly (USER_STATED, ACTIVE). */
+    @PostMapping
+    @org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.CREATED)
+    public MemoryDto create(@Valid @RequestBody CreateMemoryRequest request) {
+        return toDtos(List.of(memories.addManual(request.content(), request.category()))).get(0);
     }
 
     @PatchMapping("/{id}")

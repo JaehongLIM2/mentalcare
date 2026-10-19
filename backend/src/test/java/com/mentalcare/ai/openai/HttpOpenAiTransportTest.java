@@ -58,6 +58,49 @@ class HttpOpenAiTransportTest {
                 "m", "u", "mod", "low", "low", 5, 10, 100, 100, null, idleSeconds, 600);
     }
 
+    /** Counts onUnauthorized() calls, i.e. forced token refreshes. */
+    static final class CountingTokens implements BearerTokenProvider {
+        int unauthorized;
+        @Override public AuthMode mode() { return AuthMode.CHATGPT; }
+        @Override public boolean available() { return true; }
+        @Override public String unavailableReason() { return null; }
+        @Override public String bearer() { return "test-token"; }
+        @Override public void onUnauthorized() { unauthorized++; }
+    }
+
+    private void respond(String path, int status, String body) {
+        server.createContext(path, exchange -> {
+            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(status, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+    }
+
+    @Test
+    void unsupportedRouteDoesNotForceATokenRefresh() {
+        respond("/v1/moderations", 401, "{\"error\":{\"code\":\"no_matching_rule\",\"message\":\"no rule\"}}");
+        CountingTokens tokens = new CountingTokens();
+        HttpOpenAiTransport transport = new HttpOpenAiTransport(props(5), new ObjectMapper(), tokens);
+
+        assertThatThrownBy(() -> transport.post("/moderations", "{}"))
+                .isInstanceOfSatisfying(LlmException.class, e -> assertThat(e.kind()).isEqualTo(LlmException.Kind.ROUTE_NOT_SUPPORTED));
+        assertThat(tokens.unauthorized).isZero();
+    }
+
+    @Test
+    void expiredTokenForcesARefreshOnTheNextCall() {
+        respond("/v1/models", 401, "{\"error\":{\"code\":\"invalid_token\",\"message\":\"expired\"}}");
+        CountingTokens tokens = new CountingTokens();
+        HttpOpenAiTransport transport = new HttpOpenAiTransport(props(5), new ObjectMapper(), tokens);
+
+        assertThatThrownBy(() -> transport.get("/models"))
+                .isInstanceOfSatisfying(LlmException.class, e -> assertThat(e.kind()).isEqualTo(LlmException.Kind.AUTH_REQUIRED));
+        assertThat(tokens.unauthorized).isEqualTo(1);
+    }
+
     @Test
     void stalledStreamIsAbandonedAfterIdleTimeout() {
         HttpOpenAiTransport transport = new HttpOpenAiTransport(props(1), new ObjectMapper(), TOKENS);

@@ -41,6 +41,8 @@ public final class ApiDtos {
     /** {@code rev}: strictly increasing per tab; older revisions never overwrite newer ones. */
     public record SaveDraftRequest(@Size(max = 20000) String content, Long rev) {}
 
+    public record CreateMemoryRequest(@NotBlank @Size(max = 2000) String content, @Size(max = 50) String category) {}
+
     public record UpdateMemoryRequest(@Size(max = 2000) String content, @Size(max = 50) String category, MemoryStatus status) {}
 
     public record UpdateSettingsRequest(String counselingReasoningEffort, Integer recentSessionCount,
@@ -97,11 +99,11 @@ public final class ApiDtos {
 
     public record MemoryDto(long id, String content, String kind, String category, String status,
                             Long firstObservedSessionId, Long lastObservedSessionId, int observationCount,
-                            Instant createdAt, Instant updatedAt, List<ObservationDto> observations) {
+                            Instant createdAt, Instant updatedAt, List<ObservationDto> observations, String source) {
         public static MemoryDto of(Memory m, List<ObservationDto> observations) {
             return new MemoryDto(m.id(), m.content(), m.kind().name(), m.category(), m.status().name(),
                     m.firstObservedSessionId(), m.lastObservedSessionId(), m.observationCount(),
-                    m.createdAt(), m.updatedAt(), observations);
+                    m.createdAt(), m.updatedAt(), observations, m.source());
         }
     }
 

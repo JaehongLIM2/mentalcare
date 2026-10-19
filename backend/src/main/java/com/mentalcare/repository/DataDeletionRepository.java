@@ -43,8 +43,12 @@ public class DataDeletionRepository {
         List<Long> affected = jdbc.sql("SELECT DISTINCT memory_id FROM memory_observations WHERE session_id = :id")
                 .param("id", sessionId).query(Long.class).list();
         jdbc.sql("DELETE FROM memory_observations WHERE session_id = :id").param("id", sessionId).update();
-        // memories that were only ever observed in this session disappear with it
-        jdbc.sql("DELETE FROM memories WHERE id NOT IN (SELECT DISTINCT memory_id FROM memory_observations)").update();
+        // memories that were only ever observed in this session disappear with it; memories the user wrote
+        // by hand (never observed in any session) are not touched
+        if (!affected.isEmpty()) {
+            jdbc.sql("DELETE FROM memories WHERE id IN (:ids) AND source <> 'MANUAL' AND id NOT IN (SELECT DISTINCT memory_id FROM memory_observations)")
+                    .param("ids", affected).update();
+        }
         // every memory the session touched: recount and re-point first/last observed session
         if (!affected.isEmpty()) {
             jdbc.sql("""

@@ -138,6 +138,8 @@ export interface MemoryDto {
   createdAt: string
   updatedAt: string
   observations: ObservationDto[]
+  /** SUMMARY = extracted from a session, MANUAL = written by the user */
+  source?: 'SUMMARY' | 'MANUAL'
 }
 
 export interface TrendPoint {

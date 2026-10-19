@@ -165,7 +165,8 @@ public class HttpOpenAiTransport implements OpenAiTransport {
     private LlmException httpError(int status, String body) {
         OpenAiErrors.ParsedError parsed = OpenAiErrors.parse(mapper, body);
         LlmException e = OpenAiErrors.exception(status, parsed);
-        if (status == 401 || e.kind() == Kind.AUTH_REQUIRED) {
+        // only a rejected credential forces a token refresh; a 401 for an unsupported route does not
+        if (e.kind() == Kind.AUTH_REQUIRED) {
             tokens.onUnauthorized();
         }
         // Log status and code only; the message could echo request content in rare cases.

@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS memories (
     first_observed_session_id  INTEGER REFERENCES sessions(id),
     last_observed_session_id   INTEGER REFERENCES sessions(id),
     observation_count          INTEGER NOT NULL DEFAULT 1,
+    source                     TEXT NOT NULL DEFAULT 'SUMMARY', -- SUMMARY | MANUAL (written by the user)
     created_at                 TEXT NOT NULL,
     updated_at                 TEXT NOT NULL
 );

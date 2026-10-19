@@ -122,7 +122,7 @@ docker compose up --build
 ### 4. 테스트
 
 ```
-cd backend  && mvn test                 # 119 tests
+cd backend  && mvn test                 # 132 tests
 cd frontend && npm run typecheck && npm run test:security && npm run test:unit && npm run build && npm audit   # test:unit은 Node 22.18+
 ```
 
@@ -253,6 +253,8 @@ open-source/self-hosted 흐름을 Java로 구현했습니다. 공식 SDK(`@siwc/
 - `kind`로 "사용자가 말함(USER_STATED)"과 "AI 관찰(AI_OBSERVED)"을 구분해 저장합니다.
 - 같은 내용이 다른 상담에서 다시 관찰되면 `observation_count`가 올라가고, USER_STATED는 2회, AI_OBSERVED는 3회에 자동으로 ACTIVE가 됩니다.
 - 중복 판단은 요약 요청에 기존 기억 목록(id+내용)을 함께 보내 모델이 `matchesExistingMemoryId`로 연결하고, 없으면 문자 bigram 유사도로 보조합니다.
+- 요약 프롬프트 v2는 계속 등장할 사람·반려동물, 결론이 나지 않은 진행 중인 사안, 사용자가 밝힌 가치관을 반드시 후보로 올리게 합니다.
+- **직접 추가**: 기억 화면에서 직접 쓴 기억은 USER_STATED·ACTIVE로 바로 확정되고(`source=MANUAL`), 그 기억을 언급한 상담을 삭제해도 지워지지 않습니다(전체 삭제 시에는 함께 삭제).
 
 ## 다른 상담 도구의 기록 가져오기 (ChatGPT 이관)
 
@@ -266,9 +268,10 @@ ChatGPT 등에서 나눈 과거 상담을 MentalCare로 옮기려면, 그 대화
 ## Safety
 
 1. 사용자 메시지마다 Moderation API + 한국어/일본어/영어 위기 키워드로 **신호**를 봅니다.
-2. 신호가 있을 때만 최근 대화를 포함해 상담 모델에게 구조화된 위기 평가를 요청합니다. "죽겠다" 같은 관용 표현은 여기서 걸러집니다. 키워드나 Moderation 단독으로 모드를 바꾸지 않습니다.
+2. 신호가 있으면 최근 대화를 포함해 상담 모델에게 구조화된 위기 평가를 요청합니다. "죽겠다" 같은 관용 표현은 여기서 걸러집니다. 키워드나 Moderation 단독으로 모드를 바꾸지 않습니다.
+   **Moderation을 쓸 수 없을 때**(ChatGPT 토큰으로는 `/v1/moderations`가 `401 no_matching_rule`로 거부됨)는 키워드가 없는 위험 표현을 놓치지 않도록 **모든 사용자 메시지**를 같은 위기 평가로 검사합니다. 메시지마다 평가 요청이 하나 더 가므로 답변 시작이 몇 초 늦어질 수 있습니다.
 3. `ELEVATED` → 일반 상담 + 안전 확인 지시, 화면에 도움 안내. `IMMINENT` → 이번 턴은 crisis-response 프롬프트, 세션에 `crisis_flag`, 긴급 연락처 배너.
-4. 호출 실패 시 키워드 신호만으로 보수적으로 ELEVATED 처리. ChatGPT 플랜 모드에서 Moderation 라우트가 허용되지 않으면 30분간 건너뜁니다.
+4. 실패 처리: 신호(키워드/Moderation)가 있었는데 평가가 실패하면 보수적으로 ELEVATED. 신호 없이 검사만 실패하면 상담은 그대로 진행하되 `safety_events`에 "screening unavailable"로 기록. 지원되지 않는 경로(`no_matching_rule` 등)는 토큰 갱신 없이 6시간 동안 Moderation을 쉬고, 실제 인증 만료(`invalid_token`)만 토큰 갱신을 강제합니다.
 5. 이 시스템은 의학적으로 검증된 진단 도구가 아닙니다.
 
 ## Privacy

@@ -37,7 +37,7 @@ function MemoryCard({ memory, onSaved }: { memory: MemoryDto; onSaved: (m: Memor
         <div className="row" style={{ gap: 6 }}>
           <span className={'badge ' + memory.status.toLowerCase()}>{STATUS_LABEL[memory.status]}</span>
           <span className={'badge ' + (memory.kind === 'USER_STATED' ? 'user' : 'ai')}>
-            {memory.kind === 'USER_STATED' ? '사용자가 말함' : 'AI 관찰 (해석)'}
+            {memory.source === 'MANUAL' ? '직접 추가' : memory.kind === 'USER_STATED' ? '사용자가 말함' : 'AI 관찰 (해석)'}
           </span>
           <span className="muted small">{CATEGORY_LABEL[memory.category] ?? memory.category}</span>
         </div>
@@ -99,6 +99,27 @@ export default function MemoryPage() {
 
   const onSaved = (m: MemoryDto) => setItems((prev) => (prev ? prev.map((x) => (x.id === m.id ? m : x)) : prev))
 
+  const [newContent, setNewContent] = useState('')
+  const [newCategory, setNewCategory] = useState('other')
+  const [adding, setAdding] = useState(false)
+  const [addNotice, setAddNotice] = useState<string | null>(null)
+  const addMemory = async () => {
+    if (!newContent.trim()) return
+    setAdding(true)
+    setError(null)
+    setAddNotice(null)
+    try {
+      const created = await api.createMemory(newContent.trim(), newCategory)
+      setNewContent('')
+      setAddNotice('확정된 기억으로 추가했습니다. 다음 답변부터 상담자가 참고합니다.')
+      if (filter === 'REVIEW' || filter === 'ACTIVE' || filter === 'ALL') setItems((prev) => (prev ? [created, ...prev] : [created]))
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setAdding(false)
+    }
+  }
+
   return (
     <div>
       <div className="page-head">
@@ -106,6 +127,32 @@ export default function MemoryPage() {
         <p>
           여러 상담에 걸쳐 유지되는 내용입니다. <b>확정</b>된 기억만 다음 상담의 맥락에 포함됩니다. 잘못된 내용은 수정하거나 보관하세요.
         </p>
+      </div>
+
+      <div className="card soft">
+        <h2>기억 직접 추가</h2>
+        <p className="muted small">
+          상담자가 계속 알고 있었으면 하는 사실을 적어 두세요. 직접 추가한 기억은 바로 <b>확정</b>되어 다음 상담부터 참고됩니다.
+          예: 가족·반려동물, 진행 중인 일, 지키고 싶은 가치관.
+        </p>
+        <textarea
+          rows={2}
+          value={newContent}
+          maxLength={2000}
+          onChange={(e) => setNewContent(e.target.value)}
+          placeholder="예: 이직 여부를 올해 안에 결정하려고 한다. / 어머니가 무릎 수술 후 회복 중이다."
+        />
+        <div className="row" style={{ marginTop: 8 }}>
+          <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)} style={{ width: 'auto' }}>
+            {Object.entries(CATEGORY_LABEL).map(([k, label]) => (
+              <option key={k} value={k}>{label}</option>
+            ))}
+          </select>
+          <button className="btn primary" onClick={addMemory} disabled={adding || !newContent.trim()}>
+            {adding ? '추가하는 중…' : '기억 추가'}
+          </button>
+          {addNotice && <span className="muted small">{addNotice}</span>}
+        </div>
       </div>
 
       <div className="tabs">

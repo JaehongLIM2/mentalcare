@@ -81,7 +81,8 @@ flowchart LR
 - 신호(Moderation 또는 키워드)가 있을 때만. `input`: 최근 메시지 최대 6개. strict JSON schema.
 
 ### 9. Spring Boot → OpenAI (`POST /v1/moderations`)
-- 사용자 메시지 1건의 본문. ChatGPT 플랜 모드에서 라우트가 허용되지 않으면 30분간 건너뜀.
+- 사용자 메시지 1건의 본문. ChatGPT 플랜 모드에서 라우트가 허용되지 않으면(`401 no_matching_rule`) 6시간 건너뜀.
+- Moderation을 쓸 수 없는 동안에는 8번(위기 평가)이 **모든 사용자 메시지**에 대해 실행됩니다. 이때 OpenAI로 가는 것은 최근 대화 몇 건(기본 6개)으로, 상담 응답 요청에 이미 포함되는 범위입니다.
 
 ### 10. Spring Boot → OpenAI (`GET /v1/models`)
 - 본문 없음. 응답의 `models[].slug/display_name/visibility`만 사용.

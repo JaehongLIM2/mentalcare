@@ -162,17 +162,107 @@ class SafetyServiceTest {
         assertThat(d.mode()).isEqualTo(SafetyMode.CAUTION);
     }
 
+    private static LlmResult<CrisisAssessmentOutput> assessed(String level) {
+        return new LlmResult<>(new CrisisAssessmentOutput(level, "r", "a"), LlmUsage.none("m"));
+    }
+
+    /** Risk phrased without any keyword, e.g. "정리할 건 다 정리했고 이제 끝내도 될 것 같아요". */
+    private static final String NO_KEYWORD_RISK = "정리할 건 다 정리했고, 이제 그만 끝내도 될 것 같아요. 다들 저 없이 더 편할 거예요.";
+
     @Test
-    void moderationRouteNotSupportedIsSkippedForAWhileInsteadOfFailingEveryTurn() {
-        when(llm.moderate(anyString())).thenThrow(new LlmException(LlmException.Kind.ROUTE_NOT_SUPPORTED, "403"));
+    void keywordFreeRiskIsCaughtByScreeningWhenModerationRouteIsUnsupported() {
+        assertThat(new CrisisKeywordDetector().matches(NO_KEYWORD_RISK)).as("precondition: no keyword").isFalse();
+        when(llm.moderate(anyString())).thenThrow(new LlmException(LlmException.Kind.ROUTE_NOT_SUPPORTED, "401 no_matching_rule"));
+        when(llm.assessCrisis(anyString(), anyString(), anyString())).thenReturn(assessed("ELEVATED"));
+        Message m = user(NO_KEYWORD_RISK);
+
+        SafetyDecision d = service.evaluate(SESSION, m, List.of(m));
+
+        assertThat(d.riskLevel()).isEqualTo(RiskLevel.ELEVATED);
+        assertThat(d.mode()).isEqualTo(SafetyMode.CAUTION);
+        verify(llm).assessCrisis(anyString(), anyString(), anyString());
+        verify(events).insert(eq(1L), eq(10L), eq(false), any(), eq(false), eq(RiskLevel.ELEVATED), any());
+    }
+
+    @Test
+    void keywordFreeRiskWithWorkingModerationThatStaysSilentIsNotAssessed() {
+        // documents the boundary: with moderation available, a message with no signal at all is not assessed
+        when(llm.moderate(anyString())).thenReturn(ModerationSignal.none());
+        Message m = user(NO_KEYWORD_RISK);
+
+        SafetyDecision d = service.evaluate(SESSION, m, List.of(m));
+
+        assertThat(d.riskLevel()).isEqualTo(RiskLevel.NONE);
+        verify(llm, never()).assessCrisis(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void unsupportedRouteIsSuspendedButEveryMessageIsStillScreened() {
+        when(llm.moderate(anyString())).thenThrow(new LlmException(LlmException.Kind.ROUTE_NOT_SUPPORTED, "401 no_matching_rule"));
+        when(llm.assessCrisis(anyString(), anyString(), anyString())).thenReturn(assessed("NONE"));
         Message m = user("오늘은 괜찮아요");
 
         service.evaluate(SESSION, m, List.of(m));
         service.evaluate(SESSION, m, List.of(m));
         SafetyDecision d = service.evaluate(SESSION, m, List.of(m));
 
-        verify(llm, times(1)).moderate(anyString());
+        verify(llm, times(1)).moderate(anyString());                          // not retried every turn
+        verify(llm, times(3)).assessCrisis(anyString(), anyString(), anyString()); // but every message screened
+        assertThat(service.moderationSuspended()).isTrue();
         assertThat(d.riskLevel()).isEqualTo(RiskLevel.NONE);
+        verifyNoInteractions(events);                                          // routine NONE screens leave no rows
+    }
+
+    @Test
+    void realAuthFailureIsNotTreatedAsUnsupportedRoute() {
+        // an expired / revoked token: moderation is tried again next turn (after the token refresh)
+        when(llm.moderate(anyString()))
+                .thenThrow(new LlmException(LlmException.Kind.AUTH_REQUIRED, "401 invalid_token"))
+                .thenReturn(ModerationSignal.none());
+        when(llm.assessCrisis(anyString(), anyString(), anyString())).thenReturn(assessed("NONE"));
+        Message m = user("오늘은 괜찮아요");
+
+        service.evaluate(SESSION, m, List.of(m)); // screened because moderation failed
+        service.evaluate(SESSION, m, List.of(m)); // moderation works again: no screen needed
+
+        verify(llm, times(2)).moderate(anyString());
+        verify(llm, times(1)).assessCrisis(anyString(), anyString(), anyString());
+        assertThat(service.moderationSuspended()).isFalse();
+    }
+
+    @Test
+    void failedScreenWithoutAnySignalKeepsCounselingGoingAndLeavesATrace() {
+        when(llm.moderate(anyString())).thenThrow(new LlmException(LlmException.Kind.ROUTE_NOT_SUPPORTED, "x"));
+        when(llm.assessCrisis(anyString(), anyString(), anyString())).thenThrow(new LlmException(LlmException.Kind.TIMEOUT, "slow"));
+        Message m = user("오늘 회사에서 있었던 일을 이야기하고 싶어요");
+
+        SafetyDecision d = service.evaluate(SESSION, m, List.of(m));
+
+        assertThat(d.riskLevel()).isEqualTo(RiskLevel.NONE);
+        assertThat(d.mode()).isEqualTo(SafetyMode.NORMAL);
+        verify(events).insert(eq(1L), eq(10L), eq(false), any(), eq(false), eq(RiskLevel.NONE),
+                org.mockito.ArgumentMatchers.contains("screening unavailable: TIMEOUT"));
+    }
+
+    @Test
+    void failedAssessmentAfterAKeywordStaysConservativeEvenWithoutModeration() {
+        when(llm.moderate(anyString())).thenThrow(new LlmException(LlmException.Kind.ROUTE_NOT_SUPPORTED, "x"));
+        when(llm.assessCrisis(anyString(), anyString(), anyString())).thenThrow(new LlmException(LlmException.Kind.SERVER, "500"));
+        Message m = user("요즘 죽고 싶다는 생각이 들어요");
+
+        SafetyDecision d = service.evaluate(SESSION, m, List.of(m));
+
+        assertThat(d.riskLevel()).isEqualTo(RiskLevel.ELEVATED);
+        assertThat(d.mode()).isEqualTo(SafetyMode.CAUTION);
+    }
+
+    @Test
+    void emptyAssessmentResultCountsAsFailure() {
+        when(llm.moderate(anyString())).thenReturn(ModerationSignal.none());
+        when(llm.assessCrisis(anyString(), anyString(), anyString())).thenReturn(null);
+        Message m = user("죽고 싶어요");
+
+        assertThat(service.evaluate(SESSION, m, List.of(m)).riskLevel()).isEqualTo(RiskLevel.ELEVATED);
     }
 
     @Test

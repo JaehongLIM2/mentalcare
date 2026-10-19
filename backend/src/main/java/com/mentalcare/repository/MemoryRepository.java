@@ -27,7 +27,8 @@ public class MemoryRepository {
             longOrNull(rs, "last_observed_session_id"),
             rs.getInt("observation_count"),
             instant(rs, "created_at"),
-            instant(rs, "updated_at"));
+            instant(rs, "updated_at"),
+            rs.getString("source") == null ? Memory.SOURCE_SUMMARY : rs.getString("source"));
 
     private static final RowMapper<MemoryObservation> OBS_MAPPER = (rs, i) -> new MemoryObservation(
             rs.getLong("memory_id"), rs.getLong("session_id"), rs.getString("note"), instant(rs, "created_at"));
@@ -54,6 +55,23 @@ public class MemoryRepository {
         jdbc.sql("INSERT OR IGNORE INTO memory_observations (memory_id, session_id, note, created_at) VALUES (:mid, :sid, :note, :now)")
                 .param("mid", id).param("sid", sessionId).param("note", note).param("now", now).update();
         return findById(id).orElseThrow();
+    }
+
+    /**
+     * A memory the user wrote themselves: USER_STATED, already ACTIVE, not tied to a session
+     * (observation_count 0 until a later summary links to it).
+     */
+    public Memory insertManual(String content, String category) {
+        String now = now();
+        GeneratedKeyHolder keys = new GeneratedKeyHolder();
+        jdbc.sql("""
+                INSERT INTO memories (content, kind, category, status, first_observed_session_id,
+                                      last_observed_session_id, observation_count, source, created_at, updated_at)
+                VALUES (:content, 'USER_STATED', :category, 'ACTIVE', NULL, NULL, 0, 'MANUAL', :now, :now)
+                """)
+                .param("content", content).param("category", category).param("now", now)
+                .update(keys);
+        return findById(key(keys)).orElseThrow();
     }
 
     public Optional<Memory> findById(long id) {
@@ -96,6 +114,7 @@ public class MemoryRepository {
         if (inserted > 0) {
             jdbc.sql("""
                     UPDATE memories SET observation_count = observation_count + 1,
+                        first_observed_session_id = COALESCE(first_observed_session_id, :sid),
                         last_observed_session_id = :sid, updated_at = :now
                     WHERE id = :mid
                     """)

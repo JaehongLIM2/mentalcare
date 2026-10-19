@@ -42,7 +42,10 @@ final class OpenAiErrors {
                 case "subscription_sharing_usage_unavailable", "subscription_sharing_user_unavailable",
                      "subscription_sharing_v2_user_unavailable" -> { return Kind.PLAN_UNAVAILABLE; }
                 case "subscription_sharing_unsupported_capability" -> { return Kind.UNSUPPORTED_CAPABILITY; }
-                case "subscription_sharing_route_not_supported", "subscription_sharing_v2_route_not_supported" -> {
+                // no_matching_rule: the plan-usage gateway has no admission rule for this route (seen on
+                // /v1/moderations with a ChatGPT token). The token itself is fine: not an auth failure.
+                case "subscription_sharing_route_not_supported", "subscription_sharing_v2_route_not_supported",
+                     "no_matching_rule" -> {
                     return Kind.ROUTE_NOT_SUPPORTED;
                 }
                 case "subscription_sharing_invalid_user", "subscription_sharing_v2_invalid_user",
