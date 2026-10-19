@@ -73,6 +73,7 @@ Browser (React/Vite, 127.0.0.1) ──HTTP/SSE──► Spring Boot (127.0.0.1:8
 ### 준비물
 
 - JDK 21, Maven 3.9+, Node 20.19+ (npm) — 또는 Docker
+- 프런트엔드 단위 테스트(`npm run test:unit`)를 돌리려면 **Node 22.18+** (`.ts`를 Node가 직접 실행하는 내장 타입 제거 기능 사용). 빌드·실행만 할 때는 20.19+로 충분합니다.
 - ChatGPT 계정 (Plus/Pro 등 플랜 사용이 가능한 계정)
 
 > JDK/Maven을 시스템에 설치하지 않고 포터블로 쓰려면 `%USERPROFILE%\tools\jdk-21`, `%USERPROFILE%\tools\maven`에 풀어 두세요.
@@ -122,7 +123,7 @@ docker compose up --build
 
 ```
 cd backend  && mvn test                 # 119 tests
-cd frontend && npm run typecheck && npm run test:security && npm run test:unit && npm run build && npm audit
+cd frontend && npm run typecheck && npm run test:security && npm run test:unit && npm run build && npm audit   # test:unit은 Node 22.18+
 ```
 
 OpenAI 호출은 `LlmClient` 인터페이스 뒤에 있으므로 테스트는 네트워크 없이 Fake/Mock으로 실행됩니다.
