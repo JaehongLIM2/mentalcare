@@ -33,7 +33,8 @@ public class SessionService {
     }
 
     public record SessionDetail(Session session, WeeklyCheckIn checkIn, List<Message> messages,
-                                SessionSummary summary, List<String> tags, PromptVersion promptVersion) {}
+                                SessionSummary summary, List<String> tags, PromptVersion promptVersion,
+                                String importedMarkdown) {}
 
     public record SessionListItem(Session session, SessionSummary summary, List<String> tags, WeeklyCheckIn checkIn) {}
 
@@ -44,10 +45,12 @@ public class SessionService {
     private final TagRepository tags;
     private final PromptVersionRepository promptVersions;
     private final PromptLoader prompts;
+    private final com.mentalcare.repository.ImportedArchiveRepository archives;
 
     public SessionService(SessionRepository sessions, MessageRepository messages, CheckInRepository checkIns,
                           SummaryRepository summaries, TagRepository tags, PromptVersionRepository promptVersions,
-                          PromptLoader prompts) {
+                          PromptLoader prompts, com.mentalcare.repository.ImportedArchiveRepository archives) {
+        this.archives = archives;
         this.sessions = sessions;
         this.messages = messages;
         this.checkIns = checkIns;
@@ -90,7 +93,8 @@ public class SessionService {
                 messages.findBySession(id),
                 summaries.findBySession(id).orElse(null),
                 tags.findBySession(id),
-                pv);
+                pv,
+                session.isImported() ? archives.rawMarkdown(id).orElse(null) : null);
     }
 
     public List<SessionListItem> list(int limit, int offset) {

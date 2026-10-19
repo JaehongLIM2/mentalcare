@@ -1,6 +1,8 @@
 import type {
   AuthStatus,
   DeletionResult,
+  ImportPreview,
+  ImportResult,
   CompletionDto,
   ErrorDto,
   HomeView,
@@ -101,6 +103,26 @@ export const api = {
     signOut: () => request<{ revocationConfirmed: boolean }>('POST', '/api/auth/chatgpt/signout'),
     forget: () => request<void>('POST', '/api/auth/chatgpt/forget'),
   },
+}
+
+async function upload<T>(path: string, file: File): Promise<T> {
+  const form = new FormData()
+  form.append('file', file, file.name)
+  const res = await fetch(path, { method: 'POST', body: form, credentials: 'same-origin' })
+  const text = await res.text()
+  const json = text ? JSON.parse(text) : null
+  if (!res.ok) {
+    const err: ErrorDto = json && typeof json === 'object' && 'message' in json
+      ? (json as ErrorDto)
+      : { message: `업로드 실패 (${res.status})`, kind: 'HTTP' }
+    throw new ApiError(res.status, err)
+  }
+  return json as T
+}
+
+export const importApi = {
+  preview: (file: File) => upload<ImportPreview>('/api/imports/preview', file),
+  importArchive: (file: File) => upload<ImportResult>('/api/imports', file),
 }
 
 export function errorMessage(e: unknown): string {

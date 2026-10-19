@@ -62,7 +62,8 @@ public class SessionController {
                 CheckInDto.of(d.checkIn()),
                 d.messages().stream().map(MessageDto::of).toList(),
                 SummaryDto.of(d.summary()),
-                d.tags());
+                d.tags(),
+                d.importedMarkdown());
     }
 
     @PostMapping("/{id}/complete")

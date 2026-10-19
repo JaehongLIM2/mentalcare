@@ -51,7 +51,7 @@ class SafetyServiceTest {
                 new PromptVersion(1, "crisis-assessment", "v1", "hash", Instant.now())));
         ModelCatalogService models = mock(ModelCatalogService.class);
         when(models.counselingModel()).thenReturn("counsel-model");
-        AppProperties app = new AppProperties("d", "m", "c", 3, 7, new AppProperties.Context(30, 5),
+        AppProperties app = new AppProperties("d", "m", "c", 3, 7, new AppProperties.Context(30, 5, 0),
                 new AppProperties.Memory(2, 3), new AppProperties.Safety(0.4, 6, List.of("109")), null);
         service = new SafetyService(llm, new CrisisKeywordDetector(), prompts, events,
                 mock(UsageRecorder.class), app, new ObjectMapper(), models);

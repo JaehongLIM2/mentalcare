@@ -89,7 +89,8 @@ scripts\dev-frontend.cmd    # http://127.0.0.1:5173  (Vite, /api → 8080 proxy)
 
 ```
 scriptsuild.cmd   # frontend 빌드 → backend/src/main/resources/static → backend	arget\mentalcare.jar
-scriptsun.cmd     # java -jar backend	arget\mentalcare.jar (콘솔 창 유지)
+scripts
+un.cmd     # java -jar backend	arget\mentalcare.jar (콘솔 창 유지)
 ```
 
 http://127.0.0.1:8080 을 엽니다. 서버는 `127.0.0.1`에만 바인딩됩니다.
@@ -234,6 +235,15 @@ open-source/self-hosted 흐름을 Java로 구현했습니다. 공식 SDK(`@siwc/
 - 같은 내용이 다른 상담에서 다시 관찰되면 `observation_count`가 올라가고, USER_STATED는 2회, AI_OBSERVED는 3회에 자동으로 ACTIVE가 됩니다.
 - 중복 판단은 요약 요청에 기존 기억 목록(id+내용)을 함께 보내 모델이 `matchesExistingMemoryId`로 연결하고, 없으면 문자 bigram 유사도로 보조합니다.
 
+## 다른 상담 도구의 기록 가져오기 (ChatGPT 이관)
+
+ChatGPT 등에서 나눈 과거 상담을 MentalCare로 옮기려면, 그 대화 스레드에서 "ChatGPT 상담 이관 기록" 템플릿(`# ChatGPT 상담 이관 기록`, `## Metadata`, `## 사용자가 직접 말한 사실`, … `## Long-term Memory 후보`, `## 다음 상담 AI에게 전달할 핵심 맥락`)으로 Markdown을 만들게 한 뒤 **설정 → 다른 상담 도구의 기록 가져오기**에서 파일을 올립니다.
+
+- 올리기 전에 미리보기로 섹션별 항목 수, 기억 후보 수, 경고를 보여주고, "가져오기"를 눌러야 저장됩니다.
+- 저장 결과: `kind=IMPORTED`인 완료 상담 1건(대화 없음, 원문 Markdown은 상세 화면의 "이관 원본" 탭에서 텍스트로 표시), 구조화된 요약(사용자가 말한 사실과 "AI가 관찰한 패턴"을 분리 저장), `### Memory Candidate`들은 **CANDIDATE 기억**으로 등록(Evidence에 따라 USER_STATED / AI_OBSERVED). 확정은 기억 화면에서 직접 합니다.
+- "핵심 맥락" 섹션은 이후 모든 상담의 참고 자료 블록(`<<<DATA 이관된 과거 기록>>>`)으로 전달됩니다(기본 최대 6,000자, `mentalcare.context.imported-context-max-chars`). 이관 기록은 "최근 상담 N회"에는 포함되지 않습니다.
+- 가져오기는 AI를 호출하지 않으며, 파일은 2MB 이하의 `.md`/`.txt`만 받습니다. 이관 기록도 상담 상세에서 삭제할 수 있습니다.
+
 ## Safety
 
 1. 사용자 메시지마다 Moderation API + 한국어/일본어/영어 위기 키워드로 **신호**를 봅니다.
@@ -281,7 +291,8 @@ React UI · Spring Boot · SQLite · Responses API 스트리밍 상담 · Check-
 
 **Phase 2** – 실제 사용 후 필요가 확인되면
 Semantic Search / Embedding(SQLite 내 저장으로 충분한지 먼저 평가) · 관련 과거 상담 검색 · Memory 승격 로직 고도화 · 프롬프트 버전 개선 ·
-통계/그래프 개선 · Markdown Import(경로 검증 필수) · 백업/복구 · 비용 통계 · 상담 검색 · 로컬 PIN
+통계/그래프 개선 · 백업/복구 · 비용 통계 · 상담 검색 · 로컬 PIN
+(완료: ChatGPT 이관 기록 Markdown Import, 데이터 삭제, Windows 백그라운드 실행)
 
 **Phase 3** – 실제 필요가 생겼을 때만
 PWA · 모바일 최적화 · 음성 상담 · Local LLM · 상담 데이터 at-rest 암호화 · 자동 주간 알림

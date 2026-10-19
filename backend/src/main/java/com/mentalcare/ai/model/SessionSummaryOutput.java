@@ -9,6 +9,9 @@ import java.util.List;
  * Mirrors resources/schemas/session-summary.schema.json.
  * Fields that describe what the user said (keyEvents, userThoughts) are kept apart from
  * fields that hold the AI's interpretation (observedPatterns, discoveries).
+ *
+ * <p>{@code importedContext} is never produced by the model: it is filled only for sessions imported
+ * from another assistant and carries that archive's "핵심 맥락" text.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record SessionSummaryOutput(
@@ -22,8 +25,18 @@ public record SessionSummaryOutput(
         List<String> actionItems,
         List<String> nextSessionTopics,
         List<MemoryCandidateOutput> memoryCandidates,
-        List<String> tags
+        List<String> tags,
+        String importedContext
 ) {
+    /** Model-output shape (11 fields), used by all counseling code and tests. */
+    public SessionSummaryOutput(String title, List<String> topics, List<String> keyEvents, List<String> emotions,
+                                List<String> userThoughts, List<String> observedPatterns, List<String> discoveries,
+                                List<String> actionItems, List<String> nextSessionTopics,
+                                List<MemoryCandidateOutput> memoryCandidates, List<String> tags) {
+        this(title, topics, keyEvents, emotions, userThoughts, observedPatterns, discoveries, actionItems,
+                nextSessionTopics, memoryCandidates, tags, null);
+    }
+
     public SessionSummaryOutput {
         title = title == null ? "" : title;
         topics = safe(topics);

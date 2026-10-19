@@ -1,5 +1,6 @@
 package com.mentalcare.repository;
 
+import com.mentalcare.domain.Enums.SessionKind;
 import com.mentalcare.domain.Enums.SessionStatus;
 import com.mentalcare.domain.Session;
 import org.springframework.jdbc.core.RowMapper;
@@ -19,6 +20,7 @@ public class SessionRepository {
     private static final RowMapper<Session> MAPPER = (rs, i) -> new Session(
             rs.getLong("id"),
             SessionStatus.valueOf(rs.getString("status")),
+            rs.getString("kind") == null ? SessionKind.COUNSELING : SessionKind.valueOf(rs.getString("kind")),
             rs.getString("title"),
             instant(rs, "started_at"),
             instant(rs, "ended_at"),
@@ -37,11 +39,24 @@ public class SessionRepository {
         String now = now();
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.sql("""
-                INSERT INTO sessions (status, started_at, prompt_version_id, crisis_flag, created_at, updated_at)
-                VALUES ('ACTIVE', :now, :pv, 0, :now, :now)
+                INSERT INTO sessions (status, kind, started_at, prompt_version_id, crisis_flag, created_at, updated_at)
+                VALUES ('ACTIVE', 'COUNSELING', :now, :pv, 0, :now, :now)
                 """)
                 .param("now", now)
                 .param("pv", promptVersionId)
+                .update(keys);
+        return findById(key(keys)).orElseThrow();
+    }
+
+    /** A COMPLETED, message-less session representing an archive imported from another assistant. */
+    public Session createImported(String title, Instant counseledAt) {
+        String now = now();
+        GeneratedKeyHolder keys = new GeneratedKeyHolder();
+        jdbc.sql("""
+                INSERT INTO sessions (status, kind, title, started_at, ended_at, prompt_version_id, crisis_flag, created_at, updated_at)
+                VALUES ('COMPLETED', 'IMPORTED', :title, :started, :started, NULL, 0, :now, :now)
+                """)
+                .param("title", title).param("started", text(counseledAt)).param("now", now)
                 .update(keys);
         return findById(key(keys)).orElseThrow();
     }
@@ -60,9 +75,14 @@ public class SessionRepository {
                 .param("limit", limit).param("offset", offset).query(MAPPER).list();
     }
 
+    /** Recent completed counseling sessions (imported archives are provided to the context separately). */
     public List<Session> findRecentCompleted(int limit) {
-        return jdbc.sql("SELECT * FROM sessions WHERE status = 'COMPLETED' ORDER BY ended_at DESC LIMIT :limit")
+        return jdbc.sql("SELECT * FROM sessions WHERE status = 'COMPLETED' AND kind = 'COUNSELING' ORDER BY ended_at DESC LIMIT :limit")
                 .param("limit", limit).query(MAPPER).list();
+    }
+
+    public List<Session> findImported() {
+        return jdbc.sql("SELECT * FROM sessions WHERE kind = 'IMPORTED' ORDER BY started_at ASC").query(MAPPER).list();
     }
 
     public List<Session> findByIds(List<Long> ids) {
@@ -75,7 +95,7 @@ public class SessionRepository {
     }
 
     public long countCompleted() {
-        return jdbc.sql("SELECT COUNT(*) FROM sessions WHERE status = 'COMPLETED'").query(Long.class).single();
+        return jdbc.sql("SELECT COUNT(*) FROM sessions WHERE status = 'COMPLETED' AND kind = 'COUNSELING'").query(Long.class).single();
     }
 
     public void markCompleted(long id, String title, Instant endedAt) {

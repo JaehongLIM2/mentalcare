@@ -20,7 +20,11 @@ public record AppProperties(
         Safety safety,
         Security security
 ) {
-    public record Context(int maxActiveMemories, int maxListItemsPerSummary) {}
+    public record Context(int maxActiveMemories, int maxListItemsPerSummary, int importedContextMaxChars) {
+        public int importedContextMaxCharsOrDefault() {
+            return importedContextMaxChars <= 0 ? 6000 : importedContextMaxChars;
+        }
+    }
 
     public record Memory(int autoActivateUserStated, int autoActivateAiObserved) {}
 

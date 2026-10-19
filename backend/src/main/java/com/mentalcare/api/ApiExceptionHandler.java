@@ -35,6 +35,20 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(new ErrorDto(e.getMessage(), "BAD_REQUEST", null, null));
     }
 
+    @ExceptionHandler({org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
+            org.springframework.web.multipart.support.MissingServletRequestPartException.class,
+            org.springframework.web.bind.MissingServletRequestParameterException.class,
+            org.springframework.http.converter.HttpMessageNotReadableException.class,
+            org.springframework.web.multipart.MaxUploadSizeExceededException.class})
+    public ResponseEntity<ErrorDto> malformed(Exception e) {
+        return ResponseEntity.badRequest().body(new ErrorDto("요청 형식이 올바르지 않습니다.", "BAD_REQUEST", null, null));
+    }
+
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ResponseEntity<ErrorDto> noResource(Exception e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorDto("없는 경로입니다.", "NOT_FOUND", null, null));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorDto> validation(MethodArgumentNotValidException e) {
         Map<String, String> fields = new LinkedHashMap<>();

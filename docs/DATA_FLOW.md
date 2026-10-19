@@ -88,7 +88,12 @@ flowchart LR
 | revoke | `token`(refresh), `token_type_hint`, `client_id` |
 | jwks | `GET` (본문 없음) |
 
-### 12. OpenAI → Spring Boot → Browser
+### 11-1. 이관 기록 가져오기 (Browser → Spring Boot → SQLite)
+- 사용자가 설정 화면에서 고른 Markdown 파일이 multipart 업로드로 백엔드에 전달됩니다(같은 PC, 2MB 제한). 서버는 임의 경로를 읽지 않습니다.
+- 저장: `sessions`(kind=IMPORTED), `session_summaries`(섹션별 요약 + `importedContext`), `imported_archives`(원문 Markdown), `memories`/`memory_observations`(후보, CANDIDATE), `tags`(imported).
+- **OpenAI로 가는 것**: 이후 상담 요청의 `instructions` 안 `<<<DATA 이관된 과거 기록>>>` 블록에 각 이관 기록의 "핵심 맥락" 텍스트(총 6,000자 상한)가 들어갑니다. 원문 Markdown 전체나 섹션 전체는 보내지 않습니다. 이관 후보가 ACTIVE로 확정되면 장기 기억 블록으로도 전달됩니다.
+
+## 12. OpenAI → Spring Boot → Browser
 - SSE `response.output_text.delta` → 백엔드가 DB에 누적 저장 → 브라우저에 `delta` 이벤트 전달.
 - `response.completed`의 `usage`만 `api_usage`에 기록.
 

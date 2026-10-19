@@ -37,6 +37,7 @@ export default function HistoryPage() {
                   <span>{session.title ?? '제목 없음'}</span>
                 )}
                 {session.crisisFlag && <span className="badge ai" style={{ marginLeft: 6 }}>안전 모드 기록</span>}
+                {session.kind === 'IMPORTED' && <span className="badge candidate" style={{ marginLeft: 6 }}>이관</span>}
               </div>
               <div className="muted small">
                 {checkIn &&

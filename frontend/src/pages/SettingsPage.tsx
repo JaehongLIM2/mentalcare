@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { api, errorMessage } from '../api/client'
-import type { DeletionResult, ModelCatalog, SettingsDto } from '../api/types'
+import { api, errorMessage, importApi } from '../api/client'
+import type { DeletionResult, ImportPreview, ImportResult, ModelCatalog, SettingsDto } from '../api/types'
 import ChatGptConnect from '../components/ChatGptConnect'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 
@@ -21,6 +21,10 @@ export default function SettingsPage() {
   const [confirmWipe, setConfirmWipe] = useState(false)
   const [wiping, setWiping] = useState(false)
   const [wipeResult, setWipeResult] = useState<DeletionResult | null>(null)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null)
+  const [importResult, setImportResult] = useState<ImportResult | null>(null)
+  const [importing, setImporting] = useState(false)
 
   const apply = (s: SettingsDto) => {
     setSettings(s)
@@ -54,6 +58,36 @@ export default function SettingsPage() {
       setError(errorMessage(e))
     } finally {
       setBusy(false)
+    }
+  }
+
+  const pickImport = async (file: File | null) => {
+    setImportFile(file)
+    setImportPreview(null)
+    setImportResult(null)
+    if (!file) return
+    setImporting(true)
+    try {
+      setImportPreview(await importApi.preview(file))
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const runImport = async () => {
+    if (!importFile) return
+    setImporting(true)
+    setError(null)
+    try {
+      setImportResult(await importApi.importArchive(importFile))
+      setImportPreview(null)
+      setImportFile(null)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -191,6 +225,50 @@ export default function SettingsPage() {
         <div className="muted small" style={{ marginTop: 8 }}>
           모든 OpenAI 요청은 <code>store: false</code>로 전송되며, 상담 원문과 토큰은 로그에 기록되지 않습니다.
         </div>
+      </div>
+
+      <div className="card">
+        <h2>다른 상담 도구의 기록 가져오기</h2>
+        <p className="muted small">
+          ChatGPT 등에서 "상담 이관 기록" 템플릿으로 만든 Markdown 파일을 올리면, 완료된 상담 한 건(대화 없음)과 기억 후보로 들어옵니다.
+          핵심 맥락은 이후 상담의 참고 자료로 전달되고, 기억 후보는 기억 화면에서 직접 확정해야 상담에 반영됩니다. AI 호출은 없습니다.
+        </p>
+        <input
+          type="file"
+          accept=".md,.txt,text/markdown,text/plain"
+          onChange={(e) => void pickImport(e.target.files?.[0] ?? null)}
+          disabled={importing}
+        />
+        {importPreview && (
+          <div className="card soft" style={{ marginTop: 12 }}>
+            <h3>{importPreview.title ?? '(제목 없음)'}</h3>
+            <table className="plain">
+              <tbody>
+                <tr><th>상담 시점</th><td>{importPreview.counseledAt ?? '알 수 없음 (오늘 날짜로 저장)'}</td></tr>
+                <tr><th>주요 주제</th><td>{importPreview.mainTopics ?? '-'}</td></tr>
+                <tr><th>사실 / 사건 / 관계 / 고민</th><td>{importPreview.factCount} / {importPreview.eventCount} / {importPreview.relationshipCount} / {importPreview.concernCount}</td></tr>
+                <tr><th>AI 관찰 패턴</th><td>{importPreview.aiPatternCount}</td></tr>
+                <tr><th>기억 후보</th><td>{importPreview.memoryCandidateCount}</td></tr>
+                <tr><th>핵심 맥락</th><td>{importPreview.coreContextChars.toLocaleString()}자</td></tr>
+              </tbody>
+            </table>
+            {importPreview.warnings.length > 0 && (
+              <ul className="small" style={{ color: 'var(--warn)' }}>
+                {importPreview.warnings.map((w, i) => <li key={i}>{w}</li>)}
+              </ul>
+            )}
+            <button className="btn primary" onClick={runImport} disabled={importing} style={{ marginTop: 8 }}>
+              {importing ? '가져오는 중…' : '가져오기'}
+            </button>
+          </div>
+        )}
+        {importResult && (
+          <div className="alert info">
+            {importResult.date} "{importResult.title}" 기록을 가져왔습니다. 기억 후보 {importResult.memoriesCreated}개 생성,{' '}
+            {importResult.memoriesMerged}개 병합. <a href={`/history/${importResult.sessionId}`}>기록 보기</a> ·{' '}
+            <a href="/memory">기억 후보 검토</a>
+          </div>
+        )}
       </div>
 
       <div className="card" style={{ borderColor: 'var(--danger)' }}>

@@ -46,10 +46,10 @@ public final class ApiDtos {
 
     // ------------------------------------------------------------------ responses
 
-    public record SessionDto(long id, String status, String title, Instant startedAt, Instant endedAt,
+    public record SessionDto(long id, String status, String kind, String title, Instant startedAt, Instant endedAt,
                              String date, boolean crisisFlag, String promptVersion) {
         public static SessionDto of(Session s, PromptVersion pv) {
-            return new SessionDto(s.id(), s.status().name(), s.title(), s.startedAt(), s.endedAt(),
+            return new SessionDto(s.id(), s.status().name(), s.kind().name(), s.title(), s.startedAt(), s.endedAt(),
                     Dates.isoDate(s.startedAt()), s.crisisFlag(),
                     pv == null ? null : pv.name() + " " + pv.version() + " (" + pv.contentHash() + ")");
         }
@@ -75,7 +75,7 @@ public final class ApiDtos {
     }
 
     public record SessionDetailDto(SessionDto session, CheckInDto checkIn, List<MessageDto> messages,
-                                   SummaryDto summary, List<String> tags) {}
+                                   SummaryDto summary, List<String> tags, String importedMarkdown) {}
 
     public record SessionListItemDto(SessionDto session, List<String> topics, List<String> tags,
                                      String oneLine, CheckInDto checkIn) {}

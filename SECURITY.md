@@ -74,7 +74,8 @@
 | 인증 (OpenAI) | Sign in with ChatGPT: 동적 등록(`dynamic_agent_client` → issued `client_id` 저장), Authorization Code + PKCE S256, `state`(상수시간 비교, 1회용, 10분 만료), `nonce`, ID 토큰 RS256/`iss`/`aud`/`exp`/`azp` 검증(JWKS는 discovery 문서에서), granted scope에 `chatgpt.tokens.use.direct`가 없으면 추론 차단, refresh token 회전, 로그아웃 시 revoke. |
 | Credential 저장 | `data/credentials/chatgpt-auth.json` — Windows: DPAPI(현재 사용자) / 그 외: AES-256-GCM(키 파일 `.master.key`, 0600). 상담 DB와 분리. 원자적 쓰기. 다른 provider가 쓴 파일은 덮어쓰지 않음. 토큰은 Markdown·SQLite·로그·프론트에 절대 저장/전달되지 않음. |
 | 과금 | API 키 fallback 없음(`openai.auth-mode`는 둘 중 하나). 플랜 한도(429 `subscription_sharing_usage_limit_exceeded`)·권한 없음·미지원 기능은 애플리케이션 오류로 사용자에게 표시하고 요청 중단. |
-| Prompt injection | 과거 기록/기억/프로필/체크인은 `<<<DATA … >>>` 블록 안에만 들어가고, 시스템 프롬프트(v2)가 이를 데이터로 선언. 구분자 유사 문자열은 중화. 사용자 메시지는 `user` role로만 전달. `system` role 메시지 항목은 쓰지 않음. |
+| 이관 파일 | 업로드는 브라우저 파일 선택 → multipart(2MB, .md/.txt)로만 받음. 파일 경로를 서버가 읽지 않음. 내용은 텍스트로만 파싱·표시(HTML 렌더링 없음)하고, 모델에는 `<<<DATA>>>` 블록으로만 전달. AI 호출 없음. |
+| Prompt injection | 과거 기록/기억/프로필/체크인/이관 기록은 `<<<DATA … >>>` 블록 안에만 들어가고, 시스템 프롬프트(v2)가 이를 데이터로 선언. 구분자 유사 문자열은 중화. 사용자 메시지는 `user` role로만 전달. `system` role 메시지 항목은 쓰지 않음. |
 | Context 최소화 | 전체 DB/Markdown/과거 원문/파일 경로/설정/자격증명은 컨텍스트에 포함되지 않음(테스트로 고정). 최근 요약 N회(기본 3), 기억 최대 30개, 요약 필드당 5항목. |
 | 로깅 | 상담 원문·토큰·코드·URL·raw 요청/응답 본문을 로그하지 않음. 예외는 클래스명/종류/provider code만. 테스트가 센티넬 문자열로 로그 누출을 검증. |
 | 파일 시스템 | Markdown 경로 = `markdownDir/YYYY/YYYY-MM-DD[-id].md` (서버 생성). Import/업로드 기능 없음. DB는 `data-dir` 내부 고정. |

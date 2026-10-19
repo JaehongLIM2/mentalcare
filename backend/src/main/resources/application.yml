@@ -25,6 +25,10 @@ spring:
       request-timeout: 600000
   jackson:
     default-property-inclusion: non_null
+  servlet:
+    multipart:
+      max-file-size: 2MB
+      max-request-size: 3MB
 
 mentalcare:
   # All counseling data (SQLite + Markdown) lives under this directory. Git-ignored.
@@ -39,6 +43,8 @@ mentalcare:
   context:
     max-active-memories: 30
     max-list-items-per-summary: 5
+    # Imported archives (ChatGPT export) are always in the context, capped at this many characters.
+    imported-context-max-chars: 6000
   memory:
     # A CANDIDATE becomes ACTIVE automatically after this many distinct sessions observed it.
     auto-activate-user-stated: 2

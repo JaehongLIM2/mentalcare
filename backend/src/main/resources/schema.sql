@@ -114,3 +114,11 @@ CREATE TABLE IF NOT EXISTS app_settings (
     key    TEXT PRIMARY KEY,
     value  TEXT NOT NULL
 );
+
+-- Archives imported from another assistant (e.g. the ChatGPT export template). One row per imported session.
+CREATE TABLE IF NOT EXISTS imported_archives (
+    session_id    INTEGER PRIMARY KEY REFERENCES sessions(id),
+    source_name   TEXT NOT NULL,
+    raw_markdown  TEXT NOT NULL,
+    imported_at   TEXT NOT NULL
+);

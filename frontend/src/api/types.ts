@@ -9,9 +9,12 @@ export type MemoryStatus = 'CANDIDATE' | 'ACTIVE' | 'ARCHIVED'
 export type MemoryKind = 'USER_STATED' | 'AI_OBSERVED'
 export type AuthMode = 'CHATGPT' | 'API_KEY'
 
+export type SessionKind = 'COUNSELING' | 'IMPORTED'
+
 export interface SessionDto {
   id: number
   status: SessionStatus
+  kind: SessionKind
   title?: string | null
   startedAt: string
   endedAt?: string | null
@@ -73,6 +76,7 @@ export interface SessionDetailDto {
   messages: MessageDto[]
   summary?: SummaryDto | null
   tags: string[]
+  importedMarkdown?: string | null
 }
 
 export interface SessionListItemDto {
@@ -204,6 +208,29 @@ export interface ModelCatalog {
   defaultUtilityModel: string
   catalogError?: string | null
   fromAccount: boolean
+}
+
+export interface ImportPreview {
+  title?: string | null
+  counseledAt?: string | null
+  mainTopics?: string | null
+  factCount: number
+  eventCount: number
+  relationshipCount: number
+  concernCount: number
+  aiPatternCount: number
+  memoryCandidateCount: number
+  coreContextChars: number
+  warnings: string[]
+}
+
+export interface ImportResult {
+  sessionId: number
+  title: string
+  date: string
+  memoriesCreated: number
+  memoriesMerged: number
+  warnings: string[]
 }
 
 export interface DeletionResult {

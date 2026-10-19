@@ -25,7 +25,7 @@ class MarkdownExporterTest {
 
     private AppProperties props() {
         return new AppProperties(tmp.toString(), tmp.resolve("sessions").toString(), null, 3, 7,
-                new AppProperties.Context(30, 5), new AppProperties.Memory(2, 3),
+                new AppProperties.Context(30, 5, 0), new AppProperties.Memory(2, 3),
                 new AppProperties.Safety(0.4, 6, List.of()), null);
     }
 

@@ -38,7 +38,8 @@ export default function SessionDetailPage() {
   if (error) return <div className="alert error">{error}</div>
   if (!detail) return <div className="muted">불러오는 중…</div>
 
-  const { session, checkIn, messages, summary, tags } = detail
+  const { session, checkIn, messages, summary, tags, importedMarkdown } = detail
+  const imported = session.kind === 'IMPORTED'
 
   return (
     <div>
@@ -46,7 +47,7 @@ export default function SessionDetailPage() {
         <div>
           <h1>{session.title ?? session.date}</h1>
           <p>
-            {session.date} · 세션 #{session.id} · {session.status === 'ACTIVE' ? '진행 중' : '완료'}
+            {session.date} · 세션 #{session.id} · {imported ? '다른 도구에서 이관된 기록' : session.status === 'ACTIVE' ? '진행 중' : '완료'}
             {session.promptVersion && ` · 프롬프트 ${session.promptVersion}`}
           </p>
         </div>
@@ -98,7 +99,7 @@ export default function SessionDetailPage() {
       <div className="tabs">
         <button className={tab === 'summary' ? 'on' : ''} onClick={() => setTab('summary')}>AI 요약</button>
         <button className={tab === 'transcript' ? 'on' : ''} onClick={() => setTab('transcript')}>
-          원본 대화 ({messages.length})
+          {imported ? '이관 원본 (Markdown)' : `원본 대화 (${messages.length})`}
         </button>
       </div>
 
@@ -111,6 +112,13 @@ export default function SessionDetailPage() {
               {session.status === 'ACTIVE' ? '상담이 끝나면 요약이 생성됩니다.' : '이 상담에는 요약이 없습니다.'}
             </div>
           )}
+        </div>
+      ) : imported ? (
+        <div className="card">
+          <div className="muted small" style={{ marginBottom: 12 }}>
+            다른 상담 도구에서 작성된 이관 기록의 원문입니다. 서식 없이 텍스트 그대로 표시합니다.
+          </div>
+          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit', margin: 0 }}>{importedMarkdown ?? '(원문 없음)'}</pre>
         </div>
       ) : (
         <div className="card">

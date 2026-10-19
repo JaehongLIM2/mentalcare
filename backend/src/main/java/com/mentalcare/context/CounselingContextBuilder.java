@@ -12,6 +12,7 @@ import com.mentalcare.domain.Message;
 import com.mentalcare.domain.Session;
 import com.mentalcare.domain.SessionSummary;
 import com.mentalcare.domain.WeeklyCheckIn;
+import com.mentalcare.importing.ArchiveImportService;
 import com.mentalcare.memory.MemoryService;
 import com.mentalcare.prompt.PromptLoader;
 import com.mentalcare.repository.CheckInRepository;
@@ -51,10 +52,13 @@ public class CounselingContextBuilder {
     private final SummaryRepository summaries;
     private final CheckInRepository checkIns;
     private final ModelCatalogService models;
+    private final ArchiveImportService archiveImports;
 
     public CounselingContextBuilder(PromptLoader prompts, SettingsService settings, AppProperties app,
                                     MemoryService memoryService, SessionRepository sessions,
-                                    SummaryRepository summaries, CheckInRepository checkIns, ModelCatalogService models) {
+                                    SummaryRepository summaries, CheckInRepository checkIns, ModelCatalogService models,
+                                    ArchiveImportService archiveImports) {
+        this.archiveImports = archiveImports;
         this.prompts = prompts;
         this.settings = settings;
         this.app = app;
@@ -77,6 +81,7 @@ public class CounselingContextBuilder {
 
         appendProfile(sb);
         appendMemories(sb, memoryService.activeMemories());
+        appendImportedArchives(sb);
         appendRecentSummaries(sb, session.id());
         appendCheckIn(sb, session, checkIns.findBySession(session.id()));
 
@@ -122,6 +127,24 @@ public class CounselingContextBuilder {
             }
         }
         block(sb, "장기 기억", body.toString());
+    }
+
+    /** Core context of archives imported from another assistant: always present, capped, data only. */
+    private void appendImportedArchives(StringBuilder sb) {
+        List<ArchiveImportService.ImportedContext> imported = archiveImports.importedContexts();
+        if (imported.isEmpty()) return;
+        int budget = app.context().importedContextMaxCharsOrDefault();
+        StringBuilder body = new StringBuilder();
+        body.append("## 이전 상담 도구에서 이관된 기록 (이 앱 이전의 상담 요약, 사용자가 검토한 자료)\n");
+        for (ArchiveImportService.ImportedContext c : imported) {
+            String text = c.text().strip();
+            if (text.length() > budget) text = text.substring(0, Math.max(0, budget)) + " …(이하 생략)";
+            budget -= text.length();
+            body.append("### ").append(c.date()).append(c.title() == null ? "" : " — " + c.title()).append("\n")
+                    .append(text).append("\n\n");
+            if (budget <= 0) break;
+        }
+        block(sb, "이관된 과거 기록", body.toString());
     }
 
     private void appendRecentSummaries(StringBuilder sb, long currentSessionId) {

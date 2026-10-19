@@ -6,6 +6,9 @@ public final class Enums {
 
     public enum SessionStatus { ACTIVE, COMPLETED }
 
+    /** COUNSELING = held in this app; IMPORTED = archive transferred from another assistant (no messages). */
+    public enum SessionKind { COUNSELING, IMPORTED }
+
     public enum MessageRole { USER, ASSISTANT }
 
     public enum MessageStatus { COMPLETE, INTERRUPTED, FAILED }

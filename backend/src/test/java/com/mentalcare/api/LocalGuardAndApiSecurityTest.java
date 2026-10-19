@@ -143,9 +143,12 @@ class LocalGuardAndApiSecurityTest {
     @Test
     void errorsNeverLeakInternals() throws Exception {
         mvc.perform(get("/api/sessions/abc").header("Host", "127.0.0.1:8080"))
-                .andExpect(status().isInternalServerError())
-                .andExpect(jsonPath("$.message").value("서버 오류가 발생했습니다."))
-                .andExpect(jsonPath("$.kind").value("INTERNAL"));
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("요청 형식이 올바르지 않습니다."))
+                .andExpect(jsonPath("$.kind").value("BAD_REQUEST"));
+        mvc.perform(get("/api/does-not-exist").header("Host", "127.0.0.1:8080"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.kind").value("NOT_FOUND"));
         mvc.perform(get("/api/memories").param("status", "'; DROP").header("Host", "127.0.0.1:8080"))
                 .andExpect(status().isBadRequest());
     }
