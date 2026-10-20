@@ -547,7 +547,7 @@ export default function SessionPage() {
             {files.length > 0 && (
               <div className="muted small">
                 첨부한 파일 내용도 대화와 함께 OpenAI로 전송됩니다. 다른 사람의 메시지가 들어 있다면 그 내용도 함께 전송됩니다.
-                상담자는 이번 답변에서만 원문을 보고, 이후에는 파일 이름만 참고합니다.
+                상담자는 이 메시지와 그 뒤 두 번의 답변까지 원문을 보고, 이후에는 파일 이름만 참고합니다.
               </div>
             )}
             {fileError && <div className="small" style={{ color: 'var(--danger)' }}>{fileError}</div>}

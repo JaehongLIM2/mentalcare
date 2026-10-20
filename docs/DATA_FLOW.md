@@ -66,7 +66,7 @@ flowchart LR
 | 필드 | 내용 | 출처 |
 |---|---|---|
 | `model` | 선택된 상담 모델 slug | 설정/카탈로그 |
-| `instructions` | 시스템 프롬프트(`counselor-system-v3`) + (안전 모드 지시) + `<<<DATA 프로필>>>` + `<<<DATA 장기 기억>>>`(ACTIVE만, 최대 30) + `<<<DATA 최근 상담 요약>>>`(최근 N회, 기본 3; 요약 필드당 최대 12항목) + `<<<DATA 이번 상담>>>`(날짜, 지난 상담과의 간격, 체크인, 메모). 첫 발화에는 `opening-cue-v3` 지시가 developer 메시지로 붙음 | DB |
+| `instructions` | 시스템 프롬프트(`counselor-system-v4`) + (안전 모드 지시) + `<<<DATA 프로필>>>` + `<<<DATA 장기 기억>>>`(ACTIVE만, 최대 30) + `<<<DATA 최근 상담 요약>>>`(최근 N회, 기본 3; 요약 필드당 최대 12항목) + `<<<DATA 이번 상담>>>`(날짜, 지난 상담과의 간격, 체크인, 메모). 첫 발화에는 `opening-cue-v3` 지시가 developer 메시지로 붙음 | DB |
 | `input[]` | 현재 세션의 모든 메시지 (`user`/`assistant`), 첫 턴에는 `developer` cue 1개 | DB |
 | `reasoning.effort` | low/medium/high | 설정 |
 | `max_output_tokens` | **API 키 모드에서만** | 설정 |
@@ -80,7 +80,7 @@ flowchart LR
 
 ### 8. Spring Boot → OpenAI (`POST /v1/responses`, 위기 평가)
 - Moderation을 쓸 수 있을 때는 신호(Moderation 또는 키워드)가 있을 때만, **Moderation을 쓸 수 없을 때는 모든 사용자 메시지**에 대해 실행. 파일이 첨부된 메시지도 항상 실행. `input`: 최근 메시지 최대 6개 + 첨부가 있으면 그 발췌(키워드 주변 또는 앞뒤, 합계 약 4,000자, "사용자 본인의 말이 아닐 수 있음" 표시). strict JSON schema.
-- (첨부 파일) 상담 응답 요청에서 첨부 원문은 **그 메시지에 답하는 턴에만** 사용자 메시지 안의 `<<<DATA 첨부 파일: …>>>` 블록으로 전송되고, 이후 턴에는 파일 이름과 글자 수만 전송됩니다. 요약 요청(7번)에는 파일마다 앞부분 2,000자만 자료 블록으로 전송됩니다.
+- (첨부 파일) 상담 응답 요청에서 첨부 원문은 **그 메시지에 답하는 턴과 그 뒤 두 턴**(최근 것부터 합계 60,000자까지) 동안 사용자 메시지 안의 `<<<DATA 첨부 파일: …>>>` 블록으로 전송되고, 이후 턴에는 파일 이름과 글자 수만 전송됩니다. 요약 요청(7번)에는 파일마다 앞부분 2,000자만 자료 블록으로 전송됩니다.
 - 평가에 실패하면 결과는 "위험 없음"이 아니라 `UNAVAILABLE`로 기록되고(`safety_events`, `messages.safety_status`), 브라우저에 `safety_unavailable` 이벤트로 알립니다.
 
 ### 9. Spring Boot → OpenAI (`POST /v1/moderations`)
