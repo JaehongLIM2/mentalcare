@@ -16,6 +16,8 @@ $ErrorActionPreference = 'Stop'
 $portExplicit = $PSBoundParameters.ContainsKey('Port')
 $root = (Resolve-Path (Split-Path -Parent $PSScriptRoot)).Path
 $jar = Join-Path $root 'backend\target\mentalcare.jar'
+# the app-image built by scripts\package-windows.cmd runs the backend inside MentalCare.exe itself
+$exe = Join-Path $root 'dist\MentalCare\MentalCare.exe'
 $runDir = Join-Path $root '.run'
 $pidFile = Join-Path $runDir 'mentalcare.pid'
 $logFile = Join-Path $runDir 'mentalcare.log'
@@ -38,9 +40,16 @@ function Test-OurCommandLine([string]$cmd) {
            $cmd.TrimEnd().EndsWith(" $jar", [StringComparison]::OrdinalIgnoreCase)
 }
 
+function Test-OurProcess($proc) {
+    if (-not $proc) { return $false }
+    return (Test-OurCommandLine $proc.CommandLine) -or ($proc.ExecutablePath -and $proc.ExecutablePath -ieq $exe)
+}
+
 function Get-MentalCareProcess {
-    Get-CimInstance Win32_Process -Filter "Name = 'javaw.exe' OR Name = 'java.exe'" |
-        Where-Object { Test-OurCommandLine $_.CommandLine } |
+    $all = @(Get-CimInstance Win32_Process -Filter "Name = 'javaw.exe' OR Name = 'java.exe' OR Name = 'MentalCare.exe'" |
+        Where-Object { Test-OurProcess $_ })
+    # MentalCare.exe runs the JVM in a child MentalCare.exe; that child owns the port, so skip the parent
+    $all | Where-Object { $id = $_.ProcessId; -not ($all | Where-Object { $_.ParentProcessId -eq $id }) } |
         Select-Object -First 1
 }
 
@@ -88,7 +97,7 @@ try {
         $savedPid = $lines[0] -as [int]
         if ($savedPid) {
             $p = Get-CimInstance Win32_Process -Filter "ProcessId = $savedPid" -ErrorAction SilentlyContinue
-            if ($p -and (Test-OurCommandLine $p.CommandLine)) { $existing = $p } else { Remove-Item $pidFile -Force }
+            if (Test-OurProcess $p) { $existing = $p } else { Remove-Item $pidFile -Force }
         }
     }
     if (-not $existing) { $existing = Get-MentalCareProcess }
@@ -112,7 +121,7 @@ try {
         $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($listener) {
             $other = Get-CimInstance Win32_Process -Filter "ProcessId = $($listener.OwningProcess)" -ErrorAction SilentlyContinue
-            if (-not ($other -and (Test-OurCommandLine $other.CommandLine))) {
+            if (-not (Test-OurProcess $other)) {
                 Show-Message "Port $Port is already in use by another program (PID $($listener.OwningProcess)). Stop it or use -Port." 'MentalCare' 'Error'
                 exit 2
             }

@@ -12,6 +12,8 @@ data/
 backend/target/
 backend/src/main/resources/static/
 frontend/dist/
+# Windows app-image from scripts/package-windows.cmd (bundled runtime, ~190 MB)
+dist/
 frontend/node_modules/
 node_modules/
 

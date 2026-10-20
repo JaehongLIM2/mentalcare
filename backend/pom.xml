@@ -71,6 +71,36 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
       </plugin>
+      <!-- target/mentalcare-launcher.jar: JDK-only entry point of the Windows app-image (scripts\package-windows.cmd).
+           The fat jar and its Start-Class are unchanged. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>launcher-jar</id>
+            <phase>package</phase>
+            <goals>
+              <goal>jar</goal>
+            </goals>
+            <configuration>
+              <classifier>launcher</classifier>
+              <includes>
+                <include>com/mentalcare/launcher/**</include>
+              </includes>
+              <archive>
+                <addMavenDescriptor>false</addMavenDescriptor>
+                <manifest>
+                  <mainClass>com.mentalcare.launcher.MentalCareLauncher</mainClass>
+                </manifest>
+                <manifestEntries>
+                  <Class-Path>mentalcare.jar</Class-Path>
+                </manifestEntries>
+              </archive>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
 </project>

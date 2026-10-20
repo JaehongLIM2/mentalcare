@@ -105,7 +105,49 @@ http://127.0.0.1:8080 을 엽니다. 서버는 `127.0.0.1`에만 바인딩됩니
 | `MentalCare 시작.cmd` | `javaw.exe`로 백그라운드 실행(콘솔 없음) → `/api/health` 준비 대기 → 기본 브라우저로 http://127.0.0.1:8080 열기. 이미 실행 중이면 브라우저만 엽니다. |
 | `MentalCare 종료.cmd` | `mentalcare.jar`를 실행 중인 프로세스만 정상 종료(`POST /api/system/shutdown`), 15초 내 안 끝나면 강제 종료. |
 
-PID와 로그는 `.run\` 폴더(git 제외)에 남습니다. 처음 한 번은 `scripts\build.cmd`로 jar를 만들어야 합니다. 두 스크립트는 이 저장소의 jar 절대경로를 실행 중인 프로세스만 다루므로 다른 Java 프로그램이나 다른 복사본은 건드리지 않습니다. 다른 포트로 띄우려면 `powershell -File scripts\start-background.ps1 -Port 8081`처럼 실행하면 OAuth 복귀 주소와 종료 스크립트의 포트도 함께 맞춰집니다. 자세한 동작과 jpackage(`MentalCare.exe`) 검토는 [docs/PACKAGING.md](docs/PACKAGING.md)를 보세요.
+PID와 로그는 `.run\` 폴더(git 제외)에 남습니다. 처음 한 번은 `scripts\build.cmd`로 jar를 만들어야 합니다. 두 스크립트는 이 저장소의 jar 절대경로(와 아래 `dist\MentalCare\MentalCare.exe`)를 실행 중인 프로세스만 다루므로 다른 Java 프로그램이나 다른 복사본은 건드리지 않습니다. 다른 포트로 띄우려면 `powershell -File scripts\start-background.ps1 -Port 8081`처럼 실행하면 OAuth 복귀 주소와 종료 스크립트의 포트도 함께 맞춰집니다. 자세한 동작은 [docs/PACKAGING.md](docs/PACKAGING.md)를 보세요.
+
+### 2-2. Windows portable app
+
+JDK 없이 실행되는 `MentalCare.exe`(설치 프로그램이 아닌 portable app-image)입니다. 위 CMD 방식은 그대로 쓸 수 있고, 이것은 추가 실행 방식입니다.
+
+**Build** (JDK 21의 `jpackage` 사용, WiX 불필요):
+
+```
+scripts\package-windows.cmd
+```
+
+frontend build → `mentalcare.jar` + `mentalcare-launcher.jar` → `jpackage --type app-image` 순서로 실행되고, 끝에 이미지 안에 DB·Markdown·credential·`.env`·`.run`이 없는지 검사합니다.
+
+**Output**: `dist\MentalCare\MentalCare.exe` (옆에 `app\`, `runtime\` — Java 런타임 포함, 약 190 MB)
+
+**Usage**: `MentalCare.exe` 더블클릭 → 콘솔 창 없이 백엔드가 `127.0.0.1:8080`에서 시작 → 준비되면 기본 브라우저로 http://127.0.0.1:8080. 이미 실행 중이면 브라우저만 엽니다. 8080을 다른 프로그램이 쓰고 있으면 오류 창을 띄우고 아무것도 종료하지 않습니다. 종료는 앱 안의 종료 버튼, 또는 저장소 안의 이미지라면 `MentalCare 종료.cmd`.
+
+**데이터 저장 위치** — `app\`·`runtime\`(이미지 내부)에는 절대 저장하지 않습니다(다시 빌드하면 이미지 폴더가 통째로 교체되므로).
+
+| exe 위치 | 데이터 | 로그 |
+|---|---|---|
+| 이 저장소의 `dist\MentalCare\` (빌드 결과 그대로) | `<repo>\data` — **CMD 방식과 같은 폴더, 마이그레이션 없음** | `<repo>\.run\` |
+| 다른 곳으로 복사한 `MentalCare\` (USB 등) | 옆 폴더 `MentalCare-data\data` | `MentalCare-data\.run\` |
+| 옆 폴더에 쓸 수 없는 위치 (예: `Program Files`) | `%LOCALAPPDATA%\MentalCare\data` | `%LOCALAPPDATA%\MentalCare\.run\` |
+
+`MENTALCARE_DATA_DIR`(환경변수 또는 위 "home" 폴더의 `.env`)을 지정하면 CMD 방식과 같이 그 경로가 우선합니다. 데이터 형식(`mentalcare.db`, `sessions/*.md`, `credentials/*`, app_settings)은 CMD 방식과 동일하므로 폴더를 그대로 옮겨 쓸 수 있습니다.
+
+**ChatGPT 로그인**: 같은 jar가 같은 주소(`http://127.0.0.1:8080/api/auth/chatgpt/callback`)로 실행되므로 로그인·refresh·로그아웃 동작이 같습니다. credential은 같은 DPAPI(현재 Windows 사용자) 형식이라 CMD 방식에서 로그인한 상태가 exe에서도 유지됩니다. 다른 Windows 사용자나 다른 PC로 데이터를 옮기면 DPAPI 특성상 다시 로그인해야 합니다.
+
+**SmartScreen**: 코드 서명을 하지 않았으므로 다운로드하거나 다른 PC로 복사한 `MentalCare.exe`는 Windows SmartScreen("Windows의 PC 보호") 경고가 뜰 수 있습니다. 직접 빌드한 파일인지 확인한 뒤 "추가 정보 → 실행"을 선택하세요. 이 경고를 우회하는 기능은 넣지 않았고, 코드 서명은 별도 단계로 남겨 두었습니다.
+
+**CMD 방식과의 차이**
+
+| | `MentalCare 시작.cmd` | `MentalCare.exe` |
+|---|---|---|
+| Java | `%JAVA_HOME%` / `%USERPROFILE%\tools\jdk-21` 필요 | 번들 런타임(`runtime\`), JDK 불필요 |
+| 프로세스 | PowerShell → `javaw.exe -jar` | `MentalCare.exe` 자체가 백엔드(같은 fat jar를 같은 프로세스에서 실행) |
+| 중복 실행/준비 확인/오류 창 | PowerShell (named mutex, PID 파일) | Java launcher (`.run\launcher.lock`, `/api/health`) |
+| 포트 | `-Port`로 변경 가능 | 8080 고정 (OAuth 복귀 주소) |
+| 데이터 | `<repo>\data` | 위 표 (저장소 안에서는 같은 `<repo>\data`) |
+
+두 방식은 같은 8080을 쓰므로 동시에 두 개가 뜨지 않습니다. 한쪽이 실행 중일 때 다른 쪽을 더블클릭하면 이미 떠 있는 MentalCare의 브라우저만 엽니다(데이터 폴더가 다르면 알려 줍니다).
 
 ### 3. Docker
 
@@ -122,7 +164,7 @@ docker compose up --build
 ### 4. 테스트
 
 ```
-cd backend  && mvn test                 # 161 tests
+cd backend  && mvn test                 # 185 tests
 cd frontend && npm run typecheck && npm run test:security && npm run test:unit && npm run build && npm audit   # test:unit은 Node 22.18+
 ```
 
@@ -189,6 +231,7 @@ open-source/self-hosted 흐름을 Java로 구현했습니다. 공식 SDK(`@siwc/
 | Markdown | `data/sessions/YYYY/YYYY-MM-DD.md` (같은 날 2회차는 `-{sessionId}` 접미) | `mentalcare.markdown-dir` |
 | OAuth credential | `data/credentials/` | `MENTALCARE_CREDENTIALS_DIR` |
 | Docker | 호스트 `./data` ↔ 컨테이너 `/data` | `docker-compose.yml` volumes |
+| `MentalCare.exe` | 저장소 안: `data/` / 복사본: `MentalCare-data\data` / 그 외: `%LOCALAPPDATA%\MentalCare\data` | `MENTALCARE_DATA_DIR` ([2-2](#2-2-windows-portable-app)) |
 
 `data/`, `*.db`, `.env`는 `.gitignore`와 `.dockerignore`에 포함되어 있습니다.
 
@@ -301,14 +344,15 @@ mentalcare/
 │       ├── prompts/         프롬프트 (버전 파일)
 │       └── schemas/         Structured Output JSON Schema
 ├── frontend/                React + Vite (scripts/check-security.mjs: 정적 보안 검사)
-├── scripts/                 dev-backend.cmd, dev-frontend.cmd, build.cmd, run.cmd, start-background.ps1, stop.ps1, docker-persistence-test.sh
+├── scripts/                 dev-backend.cmd, dev-frontend.cmd, build.cmd, run.cmd, start-background.ps1, stop.ps1, package-windows.cmd, docker-persistence-test.sh
 ├── MentalCare 시작.cmd / MentalCare 종료.cmd   Windows 백그라운드 실행/종료
 ├── docs/DESIGN.md           설계 문서
 ├── docs/DATA_FLOW.md        데이터 흐름 (OpenAI로 나가는 필드)
-├── docs/PACKAGING.md        Windows 실행 방식, jpackage 검토
+├── docs/PACKAGING.md        Windows 실행 방식, jpackage app-image
 ├── SECURITY.md              위협 모델, 신뢰 경계, 위험 목록
 ├── Dockerfile, docker-compose.yml, .dockerignore
 ├── data/                    (생성됨, git-ignored) SQLite + Markdown + credentials
+├── dist/MentalCare/         (생성됨, git-ignored) Windows portable app-image
 └── .env.example
 ```
 

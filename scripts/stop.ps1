@@ -12,6 +12,8 @@ param(
 $ErrorActionPreference = 'SilentlyContinue'
 $root = (Resolve-Path (Split-Path -Parent $PSScriptRoot)).Path
 $jar = Join-Path $root 'backend\target\mentalcare.jar'
+# the app-image built by scripts\package-windows.cmd runs the backend inside MentalCare.exe itself
+$exe = Join-Path $root 'dist\MentalCare\MentalCare.exe'
 $pidFile = Join-Path $root '.run\mentalcare.pid'
 
 function Show-Message([string]$text, [string]$icon = 'Information') {
@@ -29,9 +31,14 @@ function Test-OurCommandLine([string]$cmd) {
            $cmd.TrimEnd().EndsWith(" $jar", [StringComparison]::OrdinalIgnoreCase)
 }
 
+function Test-OurProcess($proc) {
+    if (-not $proc) { return $false }
+    return (Test-OurCommandLine $proc.CommandLine) -or ($proc.ExecutablePath -and $proc.ExecutablePath -ieq $exe)
+}
+
 function Get-MentalCareProcesses {
-    Get-CimInstance Win32_Process -Filter "Name = 'javaw.exe' OR Name = 'java.exe'" |
-        Where-Object { Test-OurCommandLine $_.CommandLine }
+    Get-CimInstance Win32_Process -Filter "Name = 'javaw.exe' OR Name = 'java.exe' OR Name = 'MentalCare.exe'" |
+        Where-Object { Test-OurProcess $_ }
 }
 
 # Candidates: the PID we recorded (only if it still runs our jar) plus any other process running our jar.
@@ -42,7 +49,7 @@ if (Test-Path $pidFile) {
     if ($Port -eq 0 -and $lines.Count -ge 2) { $Port = $lines[1] -as [int] }
     if ($savedPid) {
         $p = Get-CimInstance Win32_Process -Filter "ProcessId = $savedPid"
-        if ($p -and (Test-OurCommandLine $p.CommandLine)) { $targets += $p }
+        if (Test-OurProcess $p) { $targets += $p }
     }
 }
 if ($Port -eq 0) { $Port = 8080 }
