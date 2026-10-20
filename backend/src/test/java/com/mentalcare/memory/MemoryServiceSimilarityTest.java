@@ -29,4 +29,14 @@ class MemoryServiceSimilarityTest {
                 .map(Memory::id).contains(1L);
         assertThat(MemoryService.findSimilar(existing, "여자친구와의 갈등으로 잠을 잘 못 잔다")).isEmpty();
     }
+
+    @Test
+    void identicalTextIgnoresSpacingAndSentencePunctuationButNotNumbers() {
+        List<Memory> existing = List.of(mem(1, "목표는 주 2.5시간 운동, 1/2 줄이기."));
+
+        assertThat(MemoryService.findIdentical(existing, "목표는 주 2.5시간 운동 1/2 줄이기")).map(Memory::id).contains(1L);
+        assertThat(MemoryService.findIdentical(existing, "목표는 주 25시간 운동, 1/2 줄이기.")).isEmpty();
+        assertThat(MemoryService.findIdentical(existing, "목표는 주 2.5시간 운동, 12 줄이기.")).isEmpty();
+        assertThat(MemoryService.normalize("2.5")).as("suggestion keys stay as they were").isEqualTo("25");
+    }
 }

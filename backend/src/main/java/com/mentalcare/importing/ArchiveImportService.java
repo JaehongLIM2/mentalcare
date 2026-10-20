@@ -101,7 +101,7 @@ public class ArchiveImportService {
             summaries.insert(session.id(), output, "imported", null);
             tags.replaceSessionTags(session.id(), List.of("imported"));
             archives.insert(session.id(), limit(safeName, 200), markdown, hash);
-            MemoryService.IngestResult ingest = memoryService.ingest(session.id(), candidates);
+            MemoryService.IngestResult ingest = memoryService.ingestImported(session.id(), candidates);
             return new Persisted(session, ingest);
             });
         } catch (org.springframework.dao.DataAccessException e) {

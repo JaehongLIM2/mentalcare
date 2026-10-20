@@ -111,12 +111,29 @@ public class MemoryService {
     }
 
     /**
-     * Merges summary candidates into the memory store for {@code sessionId}.
-     * A candidate that matches an existing memory (by model-provided id or by text similarity)
-     * counts as a new observation of that memory; otherwise a new CANDIDATE is created.
+     * Merges the candidates of a session summary into the memory store for {@code sessionId}.
+     * A candidate is an observation of an existing memory only when it repeats it: the model linked it with
+     * relation SAME, or its text is the same. New information and corrections (relation UPDATE or NEW) are
+     * kept as their own CANDIDATE even when they look alike: text similarity cannot tell a correction from a
+     * repeat ("does not fix it himself" vs "fixes it himself"), so it is not used here.
+     * A memory takes at most one observation per session; further repeats of it are skipped.
      */
     @Transactional
     public IngestResult ingest(long sessionId, List<MemoryCandidateOutput> candidates) {
+        return ingest(sessionId, candidates, false);
+    }
+
+    /**
+     * Like {@link #ingest(long, List)} for imported archives, which carry no memory ids: unlinked
+     * candidates also merge into a memory with similar text, so the same fact written slightly
+     * differently in several archives counts as repeated observation.
+     */
+    @Transactional
+    public IngestResult ingestImported(long sessionId, List<MemoryCandidateOutput> candidates) {
+        return ingest(sessionId, candidates, true);
+    }
+
+    private IngestResult ingest(long sessionId, List<MemoryCandidateOutput> candidates, boolean mergeSimilarUnlinked) {
         int created = 0, merged = 0, activated = 0;
         List<Memory> existing = memoriesForDeduplication();
         Set<Long> touched = new HashSet<>();
@@ -127,12 +144,12 @@ public class MemoryService {
             MemoryKind kind = parseKind(c.kind());
             String category = c.category() == null || c.category().isBlank() ? "other" : c.category().trim();
 
-            Optional<Memory> match = findById(existing, c.matchesExistingMemoryId())
-                    .or(() -> findSimilar(existing, content));
+            Optional<Memory> match = (c.restatesLinkedMemory() ? findById(existing, c.matchesExistingMemoryId()) : Optional.<Memory>empty())
+                    .or(() -> mergeSimilarUnlinked ? findSimilar(existing, content) : findIdentical(existing, content));
 
-            if (match.isPresent() && !touched.contains(match.get().id())) {
+            if (match.isPresent()) {
                 Memory m = match.get();
-                touched.add(m.id());
+                if (!touched.add(m.id())) continue; // already observed in this session
                 boolean fresh = repository.addObservation(m.id(), sessionId, c.reason());
                 if (fresh) {
                     merged++;
@@ -141,7 +158,7 @@ public class MemoryService {
                         activated++;
                     }
                 }
-            } else if (match.isEmpty()) {
+            } else {
                 Memory m = repository.insert(content, kind, category, MemoryStatus.CANDIDATE, sessionId, c.reason());
                 existing.add(m);
                 touched.add(m.id());
@@ -171,6 +188,20 @@ public class MemoryService {
     private static Optional<Memory> findById(List<Memory> memories, Long id) {
         if (id == null) return Optional.empty();
         return memories.stream().filter(m -> m.id() == id).findFirst();
+    }
+
+    static Optional<Memory> findIdentical(List<Memory> memories, String content) {
+        String target = normalizeKeepingNumbers(content);
+        if (target.isEmpty()) return Optional.empty();
+        return memories.stream().filter(m -> normalizeKeepingNumbers(m.content()).equals(target)).findFirst();
+    }
+
+    /**
+     * Like {@link #normalize} but keeps punctuation between two digits, so "2.5" and "25" (or "1/2" and "12")
+     * stay different. {@link #normalize} itself must not change: dismissed suggestions are keyed by it.
+     */
+    static String normalizeKeepingNumbers(String s) {
+        return s == null ? "" : s.toLowerCase().replaceAll("\\s+|(?<!\\d)\\p{Punct}|\\p{Punct}(?!\\d)", "");
     }
 
     static Optional<Memory> findSimilar(List<Memory> memories, String content) {

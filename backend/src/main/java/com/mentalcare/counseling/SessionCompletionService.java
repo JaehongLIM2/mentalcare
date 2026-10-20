@@ -172,7 +172,7 @@ public class SessionCompletionService {
             sb.append("\n");
             if (checkIn.note() != null && !checkIn.note().isBlank()) sb.append("체크인 메모: ").append(checkIn.note()).append("\n");
         }
-        sb.append("\n## 기존 기억 목록 (중복 후보는 matchesExistingMemoryId로 연결)\n");
+        sb.append("\n## 기존 기억 목록 (relation과 matchesExistingMemoryId로 관계 표시)\n");
         if (existing.size() > MAX_EXISTING_MEMORIES) {
             existing = existing.subList(0, MAX_EXISTING_MEMORIES);
             sb.append("(최근 ").append(MAX_EXISTING_MEMORIES).append("개만 표시)\n");

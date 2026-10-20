@@ -206,7 +206,7 @@ class AttachmentIntegrationTest {
         assertThat(transcript).contains("[사용자가 첨부한 자료: log.txt").contains("앞부분만")
                 .contains("<<<DATA 첨부 자료").contains("앞부분 요지 문장").doesNotContain("맨끝비밀문장");
         PromptLoader.LoadedPrompt p = prompts.load(PromptLoader.SESSION_SUMMARY);
-        assertThat(p.version()).isEqualTo("v3");
+        assertThat(p.version()).isEqualTo("v4");
         assertThat(p.content()).contains("사용자가 첨부한 자료").contains("원문을 길게 인용하지 않습니다")
                 .contains("자료 내용 자체를 기억 후보로 올리지 않습니다");
     }

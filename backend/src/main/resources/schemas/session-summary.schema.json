@@ -21,9 +21,10 @@
           "kind": { "type": "string", "enum": ["USER_STATED", "AI_OBSERVED"] },
           "category": { "type": "string", "enum": ["concern", "pattern", "relationship", "goal", "event", "change", "other"] },
           "reason": { "type": "string" },
-          "matchesExistingMemoryId": { "type": ["integer", "null"] }
+          "matchesExistingMemoryId": { "type": ["integer", "null"] },
+          "relation": { "type": "string", "enum": ["NEW", "SAME", "UPDATE"] }
         },
-        "required": ["content", "kind", "category", "reason", "matchesExistingMemoryId"]
+        "required": ["content", "kind", "category", "reason", "matchesExistingMemoryId", "relation"]
       }
     },
     "tags": { "type": "array", "items": { "type": "string" } }

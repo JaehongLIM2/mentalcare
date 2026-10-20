@@ -74,7 +74,7 @@ flowchart LR
 보내지 **않는** 것: 과거 세션 원문, 전체 DB, Markdown 파일, 파일 경로, application.yml 값, OAuth 자격증명, 환경변수, CANDIDATE/ARCHIVED 기억, 사용자 식별자(이메일 등).
 
 ### 7. Spring Boot → OpenAI (`POST /v1/responses`, 상담 요약 / Structured Output)
-- `instructions`: `session-summary-v2` 프롬프트.
+- `instructions`: `session-summary-v4` 프롬프트.
 - `input[0]` (user): 상담 날짜, 체크인, **기존 기억 목록(id + 내용, CANDIDATE/ACTIVE)**, **현재 세션 대화 전체**.
 - `text.format`: strict JSON schema(`session-summary.schema.json`).
 
