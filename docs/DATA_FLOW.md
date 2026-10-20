@@ -66,7 +66,7 @@ flowchart LR
 | 필드 | 내용 | 출처 |
 |---|---|---|
 | `model` | 선택된 상담 모델 slug | 설정/카탈로그 |
-| `instructions` | 시스템 프롬프트(`counselor-system-v4`) + (안전 모드 지시) + `<<<DATA 프로필>>>` + `<<<DATA 장기 기억>>>`(ACTIVE만, 최대 30) + `<<<DATA 최근 상담 요약>>>`(최근 N회, 기본 3; 요약 필드당 최대 12항목) + `<<<DATA 이번 상담>>>`(날짜, 지난 상담과의 간격, 체크인, 메모). 첫 발화에는 `opening-cue-v3` 지시가 developer 메시지로 붙음 | DB |
+| `instructions` | 시스템 프롬프트(`counselor-system-v5`) + (안전 모드 지시) + `<<<DATA 프로필>>>` + `<<<DATA 장기 기억>>>`(ACTIVE만, 최대 30) + `<<<DATA 최근 상담 요약>>>`(최근 N회, 기본 3; 요약 필드당 최대 12항목) + `<<<DATA 이번 상담>>>`(날짜, 지난 상담과의 간격, 체크인, 메모). 첫 발화에는 `opening-cue-v3` 지시가 developer 메시지로 붙음 | DB |
 | `input[]` | 현재 세션의 모든 메시지 (`user`/`assistant`), 첫 턴에는 `developer` cue 1개 | DB |
 | `reasoning.effort` | low/medium/high | 설정 |
 | `max_output_tokens` | **API 키 모드에서만** | 설정 |

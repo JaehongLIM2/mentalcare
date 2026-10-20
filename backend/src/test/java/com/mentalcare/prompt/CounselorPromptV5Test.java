@@ -22,17 +22,17 @@ import org.springframework.test.context.DynamicPropertySource;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The casual, analytical counselor (v3, v4: no lecturing) must keep the non-negotiable parts of v2: no diagnosis, the data-block
+ * The casual, analytical counselor (v3, v4: no lecturing, v5: keeps the conversation open) must keep the non-negotiable parts of v2: no diagnosis, the data-block
  * trust boundary, safety first. The safety prompts must follow the same speech level and keep their placeholders.
  */
 @SpringBootTest
 @ActiveProfiles("test")
 @Import(FakeLlmConfig.class)
-class CounselorPromptV4Test {
+class CounselorPromptV5Test {
 
     @DynamicPropertySource
     static void dirs(DynamicPropertyRegistry registry) {
-        TestDirs.register(registry, "prompt-v4");
+        TestDirs.register(registry, "prompt-v5");
     }
 
     @Autowired PromptLoader prompts;
@@ -42,9 +42,9 @@ class CounselorPromptV4Test {
     @Autowired SessionCompletionService completion;
 
     @Test
-    void systemPromptV4IsCasualDoesNotLectureAndKeepsTheBoundaries() {
+    void systemPromptV5IsCasualDoesNotLectureKeepsTheTalkGoingAndKeepsTheBoundaries() {
         PromptLoader.LoadedPrompt p = prompts.load(PromptLoader.COUNSELOR_SYSTEM);
-        assertThat(p.version()).isEqualTo("v4");
+        assertThat(p.version()).isEqualTo("v5");
         assertThat(p.content())
                 // tone and attitude requested by the user
                 .contains("한국어 반말을 기본으로").contains("과도한 상담사 말투 금지").contains("사실 / 감정 / 해석 / 추측")
@@ -55,6 +55,11 @@ class CounselorPromptV4Test {
                 .contains("먼저 사용자의 말에서 맞는 부분을 맞다고 분명히").contains("이전 결론을 방어하지 않습니다")
                 .contains("상대의 책임과 사용자의 대응을 분리합니다").contains("관계를 회복하는 것만 정답으로 두지 않습니다")
                 .contains("예의를 다할 의무는 없습니다").contains("## 길이와 형식")
+                // v5: a conversation, not a report
+                .contains("## 대화를 이어가기").contains("한 번에 하나를 깊게 봅니다").contains("닫지 않습니다")
+                .contains("사용자가 \"어떻게 해야 해?\"처럼 물을 때만").contains("감정이 먼저입니다")
+                .contains("사용자가 말하지 않은 속마음이나 동기를 단정하지 않습니다")
+                .doesNotContain("질문보다 먼저 충분히 분석하고")
                 .doesNotContain("그대로 동의하지 말고 조금 다듬어 줍니다")
                 // v4: knows how its own records work
                 .contains("## 이 앱의 기록 방식 (사실)").contains("그 뒤 두 번의 메시지에 답할 때까지만")
