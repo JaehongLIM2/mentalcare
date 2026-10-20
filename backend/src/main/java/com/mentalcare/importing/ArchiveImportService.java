@@ -100,16 +100,14 @@ public class ArchiveImportService {
             Session session = sessions.createImported(title, counseledAt);
             summaries.insert(session.id(), output, "imported", null);
             tags.replaceSessionTags(session.id(), List.of("imported"));
-            archives.insert(session.id(), limit(safeName, 200), markdown, hash);
+            if (!archives.insertIfNew(session.id(), limit(safeName, 200), markdown, hash)) {
+                // two concurrent imports of the same file: exactly one wins; this one rolls back entirely
+                Long existing = archives.findSessionByHash(hash).orElse(null);
+                throw new com.mentalcare.common.ConflictException("이미 가져온 파일입니다" + (existing == null ? "" : " (상담 #" + existing + ")") + ".", existing);
+            }
             MemoryService.IngestResult ingest = memoryService.ingestImported(session.id(), candidates);
             return new Persisted(session, ingest);
             });
-        } catch (org.springframework.dao.DataAccessException e) {
-            // two concurrent imports of the same file: the unique index on content_hash lets exactly one win.
-            // sqlite-jdbc reports this as an uncategorized SQLException (code 19), not a DataIntegrityViolation.
-            if (!isUniqueViolation(e)) throw e;
-            Long existing = archives.findSessionByHash(hash).orElse(null);
-            throw new com.mentalcare.common.ConflictException("이미 가져온 파일입니다" + (existing == null ? "" : " (상담 #" + existing + ")") + ".", existing);
         } finally {
             locks.unlockGlobalRead();
         }
@@ -133,15 +131,6 @@ public class ArchiveImportService {
     public record ImportedContext(long sessionId, String date, String title, String text) {}
 
     // ------------------------------------------------------------------ mapping
-
-    private static boolean isUniqueViolation(Throwable e) {
-        for (Throwable t = e; t != null; t = t.getCause()) {
-            if (t instanceof org.springframework.dao.DataIntegrityViolationException) return true;
-            String m = t.getMessage();
-            if (m != null && m.contains("UNIQUE constraint failed")) return true;
-        }
-        return false;
-    }
 
     public static String sha256(byte[] data) {
         try {

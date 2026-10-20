@@ -1,5 +1,7 @@
 package com.mentalcare.config;
 
+import com.mentalcare.common.ConflictException;
+import com.mentalcare.counseling.SessionLocks;
 import com.mentalcare.repository.SettingsRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -35,12 +37,15 @@ public class SettingsService {
     private final AppProperties app;
     private final OpenAiProperties openAi;
     private final TransactionTemplate tx;
+    private final SessionLocks locks;
 
-    public SettingsService(SettingsRepository repository, AppProperties app, OpenAiProperties openAi, TransactionTemplate tx) {
+    public SettingsService(SettingsRepository repository, AppProperties app, OpenAiProperties openAi, TransactionTemplate tx,
+                           SessionLocks locks) {
         this.repository = repository;
         this.app = app;
         this.openAi = openAi;
         this.tx = tx;
+        this.locks = locks;
     }
 
     public String counselingReasoningEffort() {
@@ -82,6 +87,7 @@ public class SettingsService {
         }).orElse(null);
     }
 
+    /** Called by backup and restore, which already hold the global lock; does not take it again. */
     public void markBackedUp(java.time.Instant at) {
         repository.set(KEY_LAST_BACKUP, at.toString());
     }
@@ -92,7 +98,11 @@ public class SettingsService {
         return String.join("\n", resources.stream().map(r -> "- " + r).toList());
     }
 
-    /** Validates every field first, then writes all of them in one transaction (all-or-nothing). */
+    /**
+     * Validates every field first, then writes all of them in one transaction (all-or-nothing). The write takes
+     * part in the global lock and releases it only after the commit, so a restore cannot replace app_settings
+     * underneath it and an idle shutdown waits for it.
+     */
     public void updateAll(SettingsUpdate u) {
         String effort = blankToNull(u.counselingReasoningEffort());
         if (effort != null && !EFFORTS.contains(effort)) {
@@ -104,15 +114,22 @@ public class SettingsService {
         String counselingModel = validSlugOrNull(u.counselingModel());
         String utilityModel = validSlugOrNull(u.utilityModel());
 
-        tx.executeWithoutResult(status -> {
-            if (u.counselingReasoningEffort() != null) repository.set(KEY_REASONING_EFFORT, effort);
-            if (u.recentSessionCount() != null) repository.set(KEY_RECENT_COUNT, String.valueOf(u.recentSessionCount()));
-            if (u.profileSummary() != null) repository.set(KEY_PROFILE, blankToNull(u.profileSummary()));
-            if (u.goals() != null) repository.set(KEY_GOALS, blankToNull(u.goals()));
-            if (u.counselingModel() != null) repository.set(KEY_MODEL_COUNSELING, counselingModel);
-            if (u.utilityModel() != null) repository.set(KEY_MODEL_UTILITY, utilityModel);
-            if (u.welcomeShown() != null) repository.set(KEY_WELCOME_SHOWN, u.welcomeShown() ? "true" : null);
-        });
+        if (!locks.tryLockGlobalRead()) {
+            throw new ConflictException("데이터 삭제·복원 또는 종료가 진행 중입니다. 잠시 후 다시 시도하세요.", null);
+        }
+        try {
+            tx.executeWithoutResult(status -> {
+                if (u.counselingReasoningEffort() != null) repository.set(KEY_REASONING_EFFORT, effort);
+                if (u.recentSessionCount() != null) repository.set(KEY_RECENT_COUNT, String.valueOf(u.recentSessionCount()));
+                if (u.profileSummary() != null) repository.set(KEY_PROFILE, blankToNull(u.profileSummary()));
+                if (u.goals() != null) repository.set(KEY_GOALS, blankToNull(u.goals()));
+                if (u.counselingModel() != null) repository.set(KEY_MODEL_COUNSELING, counselingModel);
+                if (u.utilityModel() != null) repository.set(KEY_MODEL_UTILITY, utilityModel);
+                if (u.welcomeShown() != null) repository.set(KEY_WELCOME_SHOWN, u.welcomeShown() ? "true" : null);
+            });
+        } finally {
+            locks.unlockGlobalRead();
+        }
     }
 
     public void updateGoals(String goals) {

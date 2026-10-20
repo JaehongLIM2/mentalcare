@@ -115,6 +115,7 @@ class MemorySuggestionIntegrationTest {
         Suggestion trip = suggestions.suggestions(12).stream()
                 .filter(x -> x.text().startsWith("친구와")).findFirst().orElseThrow();
         suggestions.dismiss(trip.key());
+        suggestions.dismiss(trip.key()); // twice (double click, second tab) is not an error
         assertThat(suggestions.suggestions(12)).extracting(Suggestion::key).doesNotContain(trip.key());
         assertThat(suggestions.dismissedKeys()).containsExactly(trip.key());
         assertThatThrownBy(() -> suggestions.dismiss("not-a-key")).isInstanceOf(IllegalArgumentException.class);

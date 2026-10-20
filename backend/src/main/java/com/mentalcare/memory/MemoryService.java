@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.HashSet;
 import java.util.List;
@@ -38,11 +39,14 @@ public class MemoryService {
             java.util.Set.of("concern", "pattern", "relationship", "goal", "event", "change", "other");
 
     private final com.mentalcare.counseling.SessionLocks locks;
+    private final TransactionTemplate tx;
 
-    public MemoryService(MemoryRepository repository, AppProperties app, com.mentalcare.counseling.SessionLocks locks) {
+    public MemoryService(MemoryRepository repository, AppProperties app, com.mentalcare.counseling.SessionLocks locks,
+                         TransactionTemplate tx) {
         this.repository = repository;
         this.app = app;
         this.locks = locks;
+        this.tx = tx;
     }
 
     /**
@@ -100,14 +104,26 @@ public class MemoryService {
         return repository.countByStatus(status);
     }
 
-    @Transactional
+    /**
+     * Edits a memory from the Memory screen. Takes part in the global lock like every other write, and holds it
+     * until the transaction has committed, so a restore or delete-all never interleaves with it.
+     */
     public Memory update(long id, String content, String category, MemoryStatus status) {
-        Memory existing = get(id);
-        String newContent = content == null || content.isBlank() ? existing.content() : content.trim();
-        String newCategory = category == null || category.isBlank() ? existing.category() : category.trim();
-        MemoryStatus newStatus = status == null ? existing.status() : status;
-        repository.update(id, newContent, newCategory, newStatus);
-        return get(id);
+        if (!locks.tryLockGlobalRead()) {
+            throw new com.mentalcare.common.ConflictException("데이터 삭제·복원 또는 종료가 진행 중입니다. 잠시 후 다시 시도하세요.", null);
+        }
+        try {
+            return tx.execute(s -> {
+                Memory existing = get(id);
+                String newContent = content == null || content.isBlank() ? existing.content() : content.trim();
+                String newCategory = category == null || category.isBlank() ? existing.category() : category.trim();
+                MemoryStatus newStatus = status == null ? existing.status() : status;
+                repository.update(id, newContent, newCategory, newStatus);
+                return get(id);
+            });
+        } finally {
+            locks.unlockGlobalRead();
+        }
     }
 
     /**

@@ -42,7 +42,8 @@ import java.util.Set;
  * Delimiter look-alikes inside the data are neutralised.
  *
  * <p>{@link #outline(Session, List)} describes the same selection without the prompt text so the
- * user can see what the counselor is referring to; both go through the same selection methods.
+ * user can see what the counselor is referring to; both go through the same selection methods
+ * (current-session messages included: see {@link #selectMessages}).
  */
 @Component
 public class CounselingContextBuilder {
@@ -100,12 +101,7 @@ public class CounselingContextBuilder {
         appendRecentSummaries(sb, session.id());
         appendCheckIn(sb, session, checkIns.findBySession(session.id()));
 
-        // attached files are given in full on the turn that answers them and the next few turns (follow-up
-        // questions are usually about the file); after that only the file name
-        Map<Long, List<Attachment>> att = attachments.bySession(session.id());
-        ContextOutline.Budget budget = budget(sessionMessages, app.context().maxSessionCharsOrDefault(), att,
-                opening ? Set.of() : fullTextMessages(sessionMessages, att));
-        List<ContextMessage> messages = new ArrayList<>(budget.messages());
+        List<ContextMessage> messages = new ArrayList<>(selectMessages(session.id(), sessionMessages, opening).messages());
         if (opening) {
             messages.add(ContextMessage.developer(prompts.load(PromptLoader.OPENING_CUE).content()));
         }
@@ -133,7 +129,7 @@ public class CounselingContextBuilder {
                 .toList();
 
         Optional<WeeklyCheckIn> checkIn = checkIns.findBySession(session.id());
-        ContextOutline.Budget budget = budget(sessionMessages, app.context().maxSessionCharsOrDefault());
+        ContextOutline.Budget budget = selectMessages(session.id(), sessionMessages, false);
         return new ContextOutline(
                 !settings.profileSummary().isBlank(),
                 !settings.goals().isBlank(),
@@ -144,9 +140,8 @@ public class CounselingContextBuilder {
 
     /** Budget statistics for the current session, used to tell the user when older messages are omitted. */
     public ContextOutline.Budget budgetOf(List<Message> sessionMessages) {
-        Map<Long, List<Attachment>> att = sessionMessages.isEmpty() ? Map.of()
-                : attachments.bySession(sessionMessages.get(0).sessionId());
-        return budget(sessionMessages, app.context().maxSessionCharsOrDefault(), att, Set.of());
+        if (sessionMessages.isEmpty()) return budget(sessionMessages, app.context().maxSessionCharsOrDefault());
+        return selectMessages(sessionMessages.get(0).sessionId(), sessionMessages, false);
     }
 
     /** User turns (the one being answered plus this many follow-ups) during which attached files stay in full. */
@@ -233,6 +228,18 @@ public class CounselingContextBuilder {
     }
 
     // ------------------------------------------------------------------ selection (shared by build and outline)
+
+    /**
+     * The current session's messages as the request carries them: attachments loaded, attached files given in
+     * full on the turn that answers them and the next few turns (follow-up questions are usually about the
+     * file), after that only the file name. {@link #build}, {@link #outline} and {@link #budgetOf} all count
+     * from this one selection, so a message that is only an attached file is shown where it is sent.
+     */
+    private ContextOutline.Budget selectMessages(long sessionId, List<Message> sessionMessages, boolean opening) {
+        Map<Long, List<Attachment>> att = attachments.bySession(sessionId);
+        return budget(sessionMessages, app.context().maxSessionCharsOrDefault(), att,
+                opening ? Set.of() : fullTextMessages(sessionMessages, att));
+    }
 
     private List<Session> recentSessions(long currentSessionId, int count) {
         if (count <= 0) return List.of();

@@ -2,7 +2,10 @@ package com.mentalcare.counseling;
 
 import com.mentalcare.api.dto.ApiDtos;
 import com.mentalcare.context.ContextMessage;
+import com.mentalcare.context.ContextOutline;
 import com.mentalcare.context.CounselingContext;
+import com.mentalcare.context.CounselingContextBuilder;
+import com.mentalcare.context.SafetyMode;
 import com.mentalcare.domain.Enums.RiskLevel;
 import com.mentalcare.domain.Message;
 import com.mentalcare.domain.Session;
@@ -151,6 +154,29 @@ class AttachmentIntegrationTest {
 
         String user = lastUserText(llm.contexts.get(0));
         assertThat(user).startsWith("(메시지 없이 파일만 첨부함)").contains("오늘 있었던 일 정리");
+        completion.complete(s.id());
+    }
+
+    @Autowired CounselingContextBuilder contextBuilder;
+
+    @Test
+    void theContextOutlineCountsAFileOnlyMessageExactlyAsTheRequestCarriesIt() {
+        Session s = sessions.start(null);
+        counseling.opening(s.id(), new Listener());
+        counseling.reply(s.id(), "", null, file("memo.md", "# 메모\n파일만 보낸 메시지"), new Listener()); // no typed text
+        var detail = sessions.detail(s.id());
+
+        CounselingContext built = contextBuilder.build(detail.session(), detail.messages(), false, SafetyMode.NORMAL);
+        ContextOutline outline = contextBuilder.outline(detail.session(), detail.messages());
+        ContextOutline.Budget streamed = contextBuilder.budgetOf(detail.messages()); // what a turn reports as included
+
+        assertThat(built.messages()).anyMatch(m -> m.role().equals("user") && m.content().startsWith("(메시지 없이 파일만 첨부함)"));
+        long conversation = built.messages().stream().filter(m -> !m.role().equals("developer")).count();
+        assertThat(conversation).isEqualTo(3); // greeting, the file-only message, the reply to it
+        assertThat(outline.messagesIncluded()).isEqualTo(3);
+        assertThat(outline.messagesOmitted()).isZero();
+        assertThat(streamed.included()).isEqualTo(outline.messagesIncluded());
+        assertThat(streamed.chars()).isEqualTo(outline.charsIncluded());
         completion.complete(s.id());
     }
 

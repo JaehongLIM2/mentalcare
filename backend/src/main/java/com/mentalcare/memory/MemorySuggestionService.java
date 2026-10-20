@@ -10,8 +10,8 @@ import com.mentalcare.domain.Session;
 import com.mentalcare.domain.SessionSummary;
 import com.mentalcare.repository.MemoryRepository;
 import com.mentalcare.repository.SessionRepository;
+import com.mentalcare.repository.SuggestionDismissalRepository;
 import com.mentalcare.repository.SummaryRepository;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -44,15 +44,15 @@ public class MemorySuggestionService {
     private final SessionRepository sessions;
     private final SummaryRepository summaries;
     private final MemoryRepository memories;
-    private final JdbcClient jdbc;
+    private final SuggestionDismissalRepository dismissals;
     private final SessionLocks locks;
 
     public MemorySuggestionService(SessionRepository sessions, SummaryRepository summaries, MemoryRepository memories,
-                                   JdbcClient jdbc, SessionLocks locks) {
+                                   SuggestionDismissalRepository dismissals, SessionLocks locks) {
         this.sessions = sessions;
         this.summaries = summaries;
         this.memories = memories;
-        this.jdbc = jdbc;
+        this.dismissals = dismissals;
         this.locks = locks;
     }
 
@@ -61,7 +61,7 @@ public class MemorySuggestionService {
                 .filter(s -> s.status() == SessionStatus.COMPLETED).limit(SESSIONS_SCANNED).toList();
         Map<Long, SessionSummary> byId = summaries.findBySessions(recent.stream().map(Session::id).toList());
         List<String> known = memories.findAll().stream().map(Memory::content).map(MemoryService::normalize).toList();
-        Set<String> dismissed = new HashSet<>(jdbc.sql("SELECT key FROM memory_suggestion_dismissals").query(String.class).list());
+        Set<String> dismissed = new HashSet<>(dismissals.keys());
 
         Map<String, Suggestion> out = new LinkedHashMap<>(); // newest session first, no duplicates
         for (Session s : recent) {
@@ -95,8 +95,7 @@ public class MemorySuggestionService {
             throw new ConflictException("데이터 삭제·복원 또는 종료가 진행 중입니다. 잠시 후 다시 시도하세요.", null);
         }
         try {
-            jdbc.sql("INSERT OR IGNORE INTO memory_suggestion_dismissals (key, created_at) VALUES (:k, :now)")
-                    .param("k", key).param("now", java.time.Instant.now().toString()).update();
+            dismissals.add(key);
         } finally {
             locks.unlockGlobalRead();
         }
@@ -137,6 +136,6 @@ public class MemorySuggestionService {
 
     /** Used by tests and delete-all bookkeeping. */
     List<String> dismissedKeys() {
-        return new ArrayList<>(jdbc.sql("SELECT key FROM memory_suggestion_dismissals").query(String.class).list());
+        return new ArrayList<>(dismissals.keys());
     }
 }

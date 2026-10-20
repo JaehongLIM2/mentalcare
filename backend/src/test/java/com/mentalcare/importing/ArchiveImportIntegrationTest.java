@@ -127,7 +127,8 @@ class ArchiveImportIntegrationTest {
         assertThat(memories.list(Set.of(MemoryStatus.CANDIDATE))).noneMatch(m -> m.content().contains("이직 여부"));
     }
 
-    @Autowired com.mentalcare.repository.ImportedArchiveRepository archiveRepository;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+    com.mentalcare.repository.ImportedArchiveRepository archiveRepository;
     @Autowired com.mentalcare.config.SchemaMigrations migrations;
     @Autowired org.springframework.jdbc.core.simple.JdbcClient jdbc;
 
@@ -231,5 +232,45 @@ class ArchiveImportIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.memoriesCreated").value(2))
                 .andExpect(jsonPath("$.date").value("2026-07-01"));
+    }
+    @Test
+    @org.junit.jupiter.api.Order(6)
+    void theRepositoryReportsAnAlreadyStoredFileAsAResultInsteadOfAnSqlError() throws Exception {
+        byte[] file = ("# ChatGPT 상담 이관 기록\n## Metadata\n- 상담 시점: 2025-04-01\n- 주요 주제: 저장소 경계\n"
+                + "## 다음 상담 AI에게 전달할 핵심 맥락\n같은 해시를 두 번 저장하려는 경우\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String hash = ArchiveImportService.sha256(file);
+        ArchiveImportService.Result first = imports.importArchive("boundary.md", file);
+        long otherId = jdbc.sql("INSERT INTO sessions (status, kind, title, started_at, ended_at, crisis_flag, created_at, updated_at) "
+                + "VALUES ('COMPLETED','IMPORTED','이관: 다른 세션', :t, :t, 0, :t, :t) RETURNING id")
+                .param("t", java.time.Instant.now().toString()).query(Long.class).single();
+
+        assertThat(archiveRepository.insertIfNew(otherId, "boundary.md", "같은 파일", hash)).isFalse();
+        assertThat(archiveRepository.rawMarkdown(otherId)).isEmpty(); // nothing written
+        assertThat(archiveRepository.findSessionByHash(hash)).contains(first.sessionId());
+        assertThat(archiveRepository.insertIfNew(otherId, "other.md", "다른 파일", "0".repeat(64))).isTrue();
+        assertThat(archiveRepository.rawMarkdown(otherId)).contains("다른 파일");
+        deletion.deleteSession(otherId);
+        deletion.deleteSession(first.sessionId());
+    }
+
+    @Test
+    @org.junit.jupiter.api.Order(7)
+    void aDuplicateFoundOnlyAtInsertIsAConflictAndRollsTheWholeImportBack() throws Exception {
+        byte[] file = ("# ChatGPT 상담 이관 기록\n## Metadata\n- 상담 시점: 2025-05-01\n- 주요 주제: 늦게 알게 된 중복\n"
+                + "## 다음 상담 AI에게 전달할 핵심 맥락\n먼저 확인할 때는 없었는데 저장할 때 이미 있는 경우\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String hash = ArchiveImportService.sha256(file);
+        ArchiveImportService.Result first = imports.importArchive("late.md", file);
+        long sessionsBefore = jdbc.sql("SELECT COUNT(*) FROM sessions").query(Long.class).single();
+        // the other tab's import commits between this import's duplicate check and its insert
+        org.mockito.Mockito.doReturn(java.util.Optional.empty()).doCallRealMethod().when(archiveRepository).findSessionByHash(hash);
+
+        assertThatThrownBy(() -> imports.importArchive("late.md", file))
+                .isInstanceOfSatisfying(com.mentalcare.common.ConflictException.class,
+                        e -> assertThat(e.getMessage()).contains("이미 가져온 파일입니다").contains("#" + first.sessionId()));
+
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM sessions").query(Long.class).single()).isEqualTo(sessionsBefore);
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM imported_archives WHERE content_hash = :h").param("h", hash)
+                .query(Long.class).single()).isEqualTo(1);
+        deletion.deleteSession(first.sessionId());
     }
 }

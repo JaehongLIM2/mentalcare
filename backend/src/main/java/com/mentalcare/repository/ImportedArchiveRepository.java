@@ -17,10 +17,19 @@ public class ImportedArchiveRepository {
         this.jdbc = jdbc;
     }
 
-    public void insert(long sessionId, String sourceName, String rawMarkdown, String contentHash) {
-        jdbc.sql("INSERT INTO imported_archives (session_id, source_name, raw_markdown, content_hash, imported_at) VALUES (:sid, :name, :md, :hash, :now)")
+    /**
+     * Stores the archive unless one with the same content hash is already stored (the unique index on
+     * content_hash decides, so two concurrent imports of one file cannot both get in).
+     *
+     * @return false when the same file was already imported; nothing is written then
+     */
+    public boolean insertIfNew(long sessionId, String sourceName, String rawMarkdown, String contentHash) {
+        return jdbc.sql("""
+                        INSERT INTO imported_archives (session_id, source_name, raw_markdown, content_hash, imported_at)
+                        VALUES (:sid, :name, :md, :hash, :now)
+                        ON CONFLICT (content_hash) DO NOTHING""")
                 .param("sid", sessionId).param("name", sourceName).param("md", rawMarkdown).param("hash", contentHash).param("now", now())
-                .update();
+                .update() == 1;
     }
 
     /** Session that already holds an archive with this content hash, if any. */
