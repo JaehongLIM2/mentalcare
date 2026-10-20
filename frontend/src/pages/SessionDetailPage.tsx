@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, errorMessage } from '../api/client'
 import type { CompletionDto, SessionDetailDto } from '../api/types'
 import ChatMessage from '../components/ChatMessage'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
+import SavedNoticeModal from '../components/SavedNoticeModal'
 import SummaryView from '../components/SummaryView'
 import { METRICS } from '../util/format'
 
@@ -11,13 +12,20 @@ export default function SessionDetailPage() {
   const { id } = useParams()
   const sessionId = Number(id)
   const location = useLocation()
-  const completion = (location.state as { completion?: CompletionDto } | null)?.completion
+  // Kept in local state so closing the notice (which also clears the history entry) leaves the warning on the page.
+  const [completion] = useState(() => (location.state as { completion?: CompletionDto } | null)?.completion)
+  const [savedOpen, setSavedOpen] = useState(!!completion)
   const [detail, setDetail] = useState<SessionDetailDto | null>(null)
   const [tab, setTab] = useState<'summary' | 'transcript'>('summary')
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const navigate = useNavigate()
+
+  const closeSaved = useCallback(() => {
+    setSavedOpen(false)
+    navigate(location.pathname, { replace: true, state: null }) // do not show it again on reload or back
+  }, [navigate, location.pathname])
 
   useEffect(() => {
     api.session(sessionId).then(setDetail).catch((e) => setError(errorMessage(e)))
@@ -75,13 +83,8 @@ export default function SessionDetailPage() {
         />
       )}
 
-      {completion && (
-        <div className="alert info">
-          상담이 저장되었습니다. 기억 후보 {completion.memoriesCreated}개 생성, {completion.memoriesMerged}개 병합,{' '}
-          {completion.memoriesActivated}개 확정.
-          {completion.warning && <div style={{ marginTop: 4 }}>{completion.warning}</div>}
-        </div>
-      )}
+      {completion && savedOpen && <SavedNoticeModal completion={completion} onClose={closeSaved} />}
+      {completion?.warning && !savedOpen && <div className="alert info">{completion.warning}</div>}
 
       {checkIn && (
         <div className="card soft">
