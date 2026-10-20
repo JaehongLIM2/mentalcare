@@ -191,17 +191,19 @@ public class MemoryService {
     }
 
     static Optional<Memory> findIdentical(List<Memory> memories, String content) {
-        String target = normalizeKeepingNumbers(content);
+        String target = normalizeForIdentity(content);
         if (target.isEmpty()) return Optional.empty();
-        return memories.stream().filter(m -> normalizeKeepingNumbers(m.content()).equals(target)).findFirst();
+        return memories.stream().filter(m -> normalizeForIdentity(m.content()).equals(target)).findFirst();
     }
 
     /**
-     * Like {@link #normalize} but keeps punctuation between two digits, so "2.5" and "25" (or "1/2" and "12")
-     * stay different. {@link #normalize} itself must not change: dismissed suggestions are keyed by it.
+     * For "is this the same sentence": ignores case, whitespace and the closing punctuation of the sentence
+     * only. Every other symbol can carry meaning ("2.5" vs "25", "-10" vs "+10", "1/2" vs "12"), so it stays.
+     * {@link #normalize} is looser and must not change: dismissed suggestions are keyed by it.
      */
-    static String normalizeKeepingNumbers(String s) {
-        return s == null ? "" : s.toLowerCase().replaceAll("\\s+|(?<!\\d)\\p{Punct}|\\p{Punct}(?!\\d)", "");
+    static String normalizeForIdentity(String s) {
+        if (s == null) return "";
+        return s.strip().replaceAll("[.!?。．！？…~～\\s]+$", "").replaceAll("\\s+", "").toLowerCase(java.util.Locale.ROOT);
     }
 
     static Optional<Memory> findSimilar(List<Memory> memories, String content) {

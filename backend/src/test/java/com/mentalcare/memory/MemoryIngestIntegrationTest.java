@@ -140,6 +140,21 @@ class MemoryIngestIntegrationTest {
     }
 
     @Test
+    void aChangedSignIsNotTheSameText() {
+        Memory existing = existingMemory("이번 달 생활비 잔액은 -10만 원이다.");
+        Session now = sessions.start(null);
+        MemoryService.IngestResult r = memories.ingest(now.id(), List.of(
+                candidate("이번 달 생활비 잔액은 +10만 원이다.", existing.id(), "UPDATE")));
+
+        assertThat(r.created()).isEqualTo(1);
+        assertThat(r.merged()).isZero();
+        assertThat(allContents()).contains("이번 달 생활비 잔액은 +10만 원이다.");
+        Memory after = memories.get(existing.id());
+        assertThat(after.observationCount()).isEqualTo(1);
+        assertThat(after.status()).isEqualTo(MemoryStatus.CANDIDATE);
+    }
+
+    @Test
     void anUnlinkedCandidateWithTheSameTextIsStillARepeat() {
         Memory existing = existingMemory("고양이와 가끔 산책한다.");
         Session now = sessions.start(null);
