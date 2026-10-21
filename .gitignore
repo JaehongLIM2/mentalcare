@@ -33,3 +33,6 @@ Thumbs.db
 
 # --- personal drafts (not part of the project) ---
 docs/blog-draft.md
+
+# --- Local Windows shortcuts ---
+*.lnk
