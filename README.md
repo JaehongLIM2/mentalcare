@@ -131,7 +131,7 @@ frontend build → `mentalcare.jar` + `mentalcare-launcher.jar` → `jpackage --
 | 다른 곳으로 복사한 `MentalCare\` (USB 등) | 옆 폴더 `MentalCare-data\data` | `MentalCare-data\.run\` |
 | 옆 폴더에 쓸 수 없는 위치 (예: `Program Files`) | `%LOCALAPPDATA%\MentalCare\data` | `%LOCALAPPDATA%\MentalCare\.run\` |
 
-`MENTALCARE_DATA_DIR`(환경변수 또는 위 "home" 폴더의 `.env`)을 지정하면 CMD 방식과 같이 그 경로가 우선합니다. 데이터 형식(`mentalcare.db`, `sessions/*.md`, `credentials/*`, app_settings)은 CMD 방식과 동일하므로 폴더를 그대로 옮겨 쓸 수 있습니다.
+`MENTALCARE_DATA_DIR`(환경변수 또는 위 "home" 폴더의 `.env`)을 지정하면 CMD 방식과 같이 그 경로가 우선합니다. 상대경로(예: `data`)는 exe 폴더가 아니라 위 "home" 폴더 기준입니다(CMD 방식이 저장소 루트 기준인 것과 같음). 데이터 형식(`mentalcare.db`, `sessions/*.md`, `credentials/*`, app_settings)은 CMD 방식과 동일하므로 폴더를 그대로 옮겨 쓸 수 있습니다.
 
 **ChatGPT 로그인**: 같은 jar가 같은 주소(`http://127.0.0.1:8080/api/auth/chatgpt/callback`)로 실행되므로 로그인·refresh·로그아웃 동작이 같습니다. credential은 같은 DPAPI(현재 Windows 사용자) 형식이라 CMD 방식에서 로그인한 상태가 exe에서도 유지됩니다. 다른 Windows 사용자나 다른 PC로 데이터를 옮기면 DPAPI 특성상 다시 로그인해야 합니다.
 
@@ -164,7 +164,7 @@ docker compose up --build
 ### 4. 테스트
 
 ```
-cd backend  && mvn test                 # 185 tests
+cd backend  && mvn test                 # 186 tests
 cd frontend && npm run typecheck && npm run test:security && npm run test:unit && npm run build && npm audit   # test:unit은 Node 22.18+
 ```
 

@@ -71,8 +71,8 @@ public final class MentalCareLauncher {
         launcherLog = layout.runDir().resolve("launcher.log");
 
         Map<String, String> dotEnv = readDotEnv(layout.home().resolve(".env"));
-        Path dataDir = dataDirOverride(System.getenv("MENTALCARE_DATA_DIR"), dotEnv.get("MENTALCARE_DATA_DIR"))
-                .orElse(layout.dataDir());
+        Path dataDir = dataDirOverride(System.getenv("MENTALCARE_DATA_DIR"), dotEnv.get("MENTALCARE_DATA_DIR"),
+                        layout.home()).orElse(layout.dataDir());
         if (image != null && insideImage(dataDir, image)) {
             fail("데이터 폴더가 앱 폴더 안을 가리킵니다. 앱을 다시 빌드하면 지워지므로 사용할 수 없습니다.\n" + dataDir, 11);
             return;
@@ -201,10 +201,11 @@ public final class MentalCareLauncher {
                 && Files.isRegularFile(dir.resolve("scripts").resolve("start-background.ps1"));
     }
 
-    static java.util.Optional<Path> dataDirOverride(String env, String dotEnv) {
+    /** A relative value is taken from {@code home}, like the CMD start whose working directory is the repository. */
+    static java.util.Optional<Path> dataDirOverride(String env, String dotEnv, Path home) {
         String v = dotEnv != null && !dotEnv.isBlank() ? dotEnv : env;
         return v == null || v.isBlank() ? java.util.Optional.empty()
-                : java.util.Optional.of(Path.of(v.trim()).toAbsolutePath().normalize());
+                : java.util.Optional.of(home.resolve(v.trim()).toAbsolutePath().normalize());
     }
 
     static boolean insideImage(Path dir, Path image) {

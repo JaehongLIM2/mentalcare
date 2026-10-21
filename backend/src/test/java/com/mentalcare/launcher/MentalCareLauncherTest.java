@@ -76,9 +76,24 @@ class MentalCareLauncherTest {
 
     @Test
     void dotEnvValueWinsOverTheEnvironmentLikeTheStartScript() {
-        assertThat(MentalCareLauncher.dataDirOverride("C:/env", "C:/dotenv")).contains(Path.of("C:/dotenv"));
-        assertThat(MentalCareLauncher.dataDirOverride("C:/env", null)).contains(Path.of("C:/env"));
-        assertThat(MentalCareLauncher.dataDirOverride(" ", "")).isEmpty();
+        Path home = tmp.resolve("repo");
+        assertThat(MentalCareLauncher.dataDirOverride("C:/env", "C:/dotenv", home)).contains(Path.of("C:/dotenv"));
+        assertThat(MentalCareLauncher.dataDirOverride("C:/env", null, home)).contains(Path.of("C:/env"));
+        assertThat(MentalCareLauncher.dataDirOverride(" ", "", home)).isEmpty();
+    }
+
+    @Test
+    void relativeDataDirIsTakenFromHomeNotFromTheExeFolder() throws IOException {
+        Path repo = repo();
+        Path image = repo.resolve("dist/MentalCare");
+        MentalCareLauncher.Layout l = MentalCareLauncher.resolveLayout(image, tmp.resolve("local").toString());
+
+        Path dir = MentalCareLauncher.dataDirOverride(null, "data", l.home()).orElseThrow();
+
+        assertThat(dir).isEqualTo(repo.resolve("data").toAbsolutePath().normalize());
+        assertThat(MentalCareLauncher.insideImage(dir, image)).isFalse();
+        assertThat(MentalCareLauncher.dataDirOverride(null, "..\\other", l.home()).orElseThrow())
+                .isEqualTo(tmp.resolve("other").toAbsolutePath().normalize());
     }
 
     @Test
