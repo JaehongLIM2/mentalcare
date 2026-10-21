@@ -128,4 +128,12 @@ class MentalCareLauncherTest {
         assertThat(MentalCareLauncher.causedByPortInUse(new IllegalStateException("x", new BindException("in use")))).isTrue();
         assertThat(MentalCareLauncher.causedByPortInUse(new IllegalStateException("x"))).isFalse();
     }
+
+    @Test
+    void dataDirectoryInUseIsRecognisedThroughWrappedCauses() {
+        var inUse = new com.mentalcare.config.DataDirectoryLock.DataDirectoryInUseException(tmp);
+        assertThat(MentalCareLauncher.causedByDataDirInUse(new IllegalStateException("x", inUse))).isTrue();
+        assertThat(MentalCareLauncher.causedByDataDirInUse(new IllegalStateException("x"))).isFalse();
+        assertThat(MentalCareLauncher.causedByPortInUse(inUse)).isFalse();
+    }
 }

@@ -378,6 +378,12 @@ public final class MentalCareLauncher {
             fail("포트 " + PORT + "을(를) 다른 프로그램이 사용 중입니다.\n그 프로그램을 종료한 뒤 다시 실행하세요.", 2);
             return;
         }
+        if (causedByDataDirInUse(t)) {
+            // e.g. MentalCare 시작.cmd -Port 8081 on the same data: the backend refuses before opening anything
+            fail("같은 데이터 폴더를 쓰는 MentalCare가 이미 실행 중입니다(다른 포트일 수 있음).\n"
+                    + "그 MentalCare를 종료한 뒤 다시 실행하세요.", 6);
+            return;
+        }
         fail("MentalCare를 시작하지 못했습니다.\n로그: " + runDir.resolve("mentalcare.log"), 5);
     }
 
@@ -385,6 +391,15 @@ public final class MentalCareLauncher {
         for (Throwable c = t; c != null; c = c.getCause()) {
             String n = c.getClass().getName();
             if (n.endsWith("PortInUseException") || c instanceof java.net.BindException) return true;
+            if (c.getCause() == c) break;
+        }
+        return false;
+    }
+
+    /** By name: the backend's classes live in the fat jar's own class loader, not on the launcher's class path. */
+    static boolean causedByDataDirInUse(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause()) {
+            if (c.getClass().getName().endsWith("DataDirectoryInUseException")) return true;
             if (c.getCause() == c) break;
         }
         return false;

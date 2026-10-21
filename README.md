@@ -147,7 +147,7 @@ frontend build → `mentalcare.jar` + `mentalcare-launcher.jar` → `jpackage --
 | 포트 | `-Port`로 변경 가능 | 8080 고정 (OAuth 복귀 주소) |
 | 데이터 | `<repo>\data` | 위 표 (저장소 안에서는 같은 `<repo>\data`) |
 
-두 방식은 같은 8080을 쓰므로 동시에 두 개가 뜨지 않습니다. 한쪽이 실행 중일 때 다른 쪽을 더블클릭하면 이미 떠 있는 MentalCare의 브라우저만 엽니다(데이터 폴더가 다르면 알려 줍니다).
+두 방식은 같은 8080을 쓰므로 동시에 두 개가 뜨지 않습니다. 한쪽이 실행 중일 때 다른 쪽을 더블클릭하면 이미 떠 있는 MentalCare의 브라우저만 엽니다(데이터 폴더가 다르면 알려 줍니다). 포트를 바꿔도 같은 데이터 폴더는 한 프로세스만 쓸 수 있습니다: 백엔드가 `data\mentalcare.lock`을 잠그므로 두 번째 프로세스는 시작을 거부합니다([PACKAGING.md](docs/PACKAGING.md#데이터-폴더당-프로세스-하나)).
 
 ### 3. Docker
 
@@ -164,7 +164,7 @@ docker compose up --build
 ### 4. 테스트
 
 ```
-cd backend  && mvn test                 # 186 tests
+cd backend  && mvn test                 # 194 tests
 cd frontend && npm run typecheck && npm run test:security && npm run test:unit && npm run build && npm audit   # test:unit은 Node 22.18+
 ```
 
