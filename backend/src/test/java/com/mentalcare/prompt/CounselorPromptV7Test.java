@@ -22,17 +22,19 @@ import org.springframework.test.context.DynamicPropertySource;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The casual, analytical counselor (v3, v4: no lecturing, v5: keeps the conversation open, v6: stays on the user's thread) must keep the non-negotiable parts of v2: no diagnosis, the data-block
- * trust boundary, safety first. The safety prompts must follow the same speech level and keep their placeholders.
+ * The casual, analytical counselor (v3, v4: no lecturing, v5: keeps the conversation open, v6: stays on the user's
+ * thread, v7: principles and full-turn examples instead of a rulebook, so answers stop following one template) must
+ * keep the non-negotiable parts of v2: no diagnosis, the data-block trust boundary, safety first. The safety prompts
+ * must follow the same speech level and keep their placeholders.
  */
 @SpringBootTest
 @ActiveProfiles("test")
 @Import(FakeLlmConfig.class)
-class CounselorPromptV6Test {
+class CounselorPromptV7Test {
 
     @DynamicPropertySource
     static void dirs(DynamicPropertyRegistry registry) {
-        TestDirs.register(registry, "prompt-v6");
+        TestDirs.register(registry, "prompt-v7");
     }
 
     @Autowired PromptLoader prompts;
@@ -42,30 +44,30 @@ class CounselorPromptV6Test {
     @Autowired SessionCompletionService completion;
 
     @Test
-    void systemPromptV6IsCasualDoesNotLectureKeepsTheTalkGoingAndKeepsTheBoundaries() {
+    void systemPromptV7IsCasualHasAStanceVariesItsShapeAndKeepsTheBoundaries() {
         PromptLoader.LoadedPrompt p = prompts.load(PromptLoader.COUNSELOR_SYSTEM);
-        assertThat(p.version()).isEqualTo("v6");
+        assertThat(p.version()).isEqualTo("v7");
         assertThat(p.content())
-                // tone and attitude requested by the user
-                .contains("한국어 반말을 기본으로").contains("과도한 상담사 말투 금지").contains("사실 / 감정 / 해석 / 추측")
+                // tone
+                .contains("한국어 반말을 기본으로").contains("전형적인 상담 문구는 쓰지 않습니다")
                 .contains("메타 발언을 하지 않습니다")
-                // v4: no lecturing (feedback from real use)
+                // v7: one principles section with full-turn examples replaces six rule sections
+                .contains("## 어떻게 답하는가").contains("같은 모양으로 답하지 않습니다")
+                .contains("길이는 사용자 메시지에 맞춥니다").contains("당신의 생각을 말합니다")
+                .contains("밀려도 바로 넘어지지 않습니다").contains("같은 일로 두 번 사과하지 않고")
+                .contains("눈앞의 일이 있으면 거기로 갑니다").contains("## 답변 예시")
+                .doesNotContain("문단 세 개 이내").doesNotContain("두세 번 이어졌다면")
+                .doesNotContain("판단 순서").doesNotContain("감정이 먼저입니다")
+                // kept from v4-v6: no lecturing, responsibility, the user's thread
                 .contains("## 훈계하지 않기").contains("사용자의 표현을 고쳐 주지 않습니다")
-                .contains("묻지 않은 도덕적 지적을 하지 않습니다").contains("사용자가 어떻게 말할지 물을 때만")
-                .contains("먼저 사용자의 말에서 맞는 부분을 맞다고 분명히").contains("이전 결론을 방어하지 않습니다")
+                .contains("묻지 않은 도덕적 지적을 하지 않습니다").contains("어떻게 말할지 물을 때만")
+                .contains("이전 결론을 방어하지 않습니다").contains("사실 / 감정 / 해석 / 추측")
                 .contains("상대의 책임과 사용자의 대응을 분리합니다").contains("관계를 회복하는 것만 정답으로 두지 않습니다")
-                .contains("예의를 다할 의무는 없습니다").contains("## 길이와 형식")
-                // v5: a conversation, not a report
-                .contains("## 대화를 이어가기").contains("한 번에 하나를 깊게 봅니다").contains("닫지 않습니다")
-                .contains("사용자가 \"어떻게 해야 해?\"처럼 물을 때만").contains("감정이 먼저입니다")
-                .contains("사용자가 말하지 않은 속마음이나 동기를 단정하지 않습니다")
-                .doesNotContain("질문보다 먼저 충분히 분석하고")
-                // v6: stays on the user's thread, no reflex questions or caveats
-                .contains("큰 줄기를 놓치지 않습니다").contains("양자택일 질문을 습관처럼 쓰지 않습니다")
-                .contains("모든 답변 끝에 질문을 붙이지 않습니다")
+                .contains("예의를 다할 의무는 없습니다").contains("한 번에 하나를 깊게 봅니다")
+                .contains("진행 중인 주제를 결론으로 닫지 않습니다").contains("속마음이나 동기를 단정하지 않습니다")
+                .contains("양자택일 질문은 하지 않습니다").contains("기록에 이미 있는 것을 묻는 질문")
                 .contains("이미 끝난 일과 이미 내린 결정에는 균형 잡는 \"다만\"을 붙이지 않습니다")
                 .contains("사용자가 꺼내지 않은 과거의 잘못을 기억이나 기록에서 끌어오지 않습니다")
-                .doesNotContain("그대로 동의하지 말고 조금 다듬어 줍니다")
                 // v4: knows how its own records work
                 .contains("## 이 앱의 기록 방식 (사실)").contains("그 뒤 두 번의 메시지에 답할 때까지만")
                 .contains("자동으로 장기 기억이 됩니다").doesNotContain("승인해야 장기 기억이 됩니다")
